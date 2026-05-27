@@ -21,23 +21,25 @@ export const Route = createFileRoute("/dispatch")({
   component: Dispatch,
 });
 
-type Status = "available" | "busy" | "offline";
+type AvailColor = "green" | "amber" | "grey" | "red";
 const technicians: {
   id: string;
   name: string;
   vendor: string;
+  vendorType: "COCO" | "ASP";
   distanceKm: number;
   etaMin: number;
   rating: number;
   workload: string;
-  status: Status;
+  availColor: AvailColor;
+  busyUntil?: string;
   recommended?: boolean;
 }[] = [
-  { id: "T-101", name: "Ramesh Patil", vendor: "Mahalaxmi Towing", distanceKm: 1.8, etaMin: 9, rating: 4.9, workload: "0 jobs", status: "available", recommended: true },
-  { id: "T-102", name: "Imran Sheikh", vendor: "BKC Auto Rescue", distanceKm: 2.4, etaMin: 12, rating: 4.7, workload: "0 jobs", status: "available" },
-  { id: "T-103", name: "Suresh Kumar", vendor: "Mumbai Quick Tow", distanceKm: 3.1, etaMin: 16, rating: 4.6, workload: "1 job", status: "busy" },
-  { id: "T-104", name: "Anil Yadav", vendor: "Western Roadside", distanceKm: 4.2, etaMin: 19, rating: 4.8, workload: "0 jobs", status: "available" },
-  { id: "T-105", name: "Vijay Singh", vendor: "City Tow 24x7", distanceKm: 5.0, etaMin: 24, rating: 4.4, workload: "—", status: "offline" },
+  { id: "T-101", name: "Ramesh Patil", vendor: "Mahalaxmi Towing", vendorType: "COCO", distanceKm: 1.8, etaMin: 9, rating: 4.9, workload: "0 jobs", availColor: "green", recommended: true },
+  { id: "T-102", name: "Imran Sheikh", vendor: "BKC Auto Rescue", vendorType: "COCO", distanceKm: 2.4, etaMin: 12, rating: 4.7, workload: "0 jobs", availColor: "green" },
+  { id: "T-103", name: "Suresh Kumar", vendor: "Mumbai Quick Tow", vendorType: "ASP", distanceKm: 3.1, etaMin: 16, rating: 4.6, workload: "1 job", availColor: "amber", busyUntil: "~11:05 AM" },
+  { id: "T-104", name: "Anil Yadav", vendor: "Western Roadside", vendorType: "ASP", distanceKm: 4.2, etaMin: 19, rating: 4.8, workload: "0 jobs", availColor: "green" },
+  { id: "T-105", name: "Vijay Singh", vendor: "City Tow 24x7", vendorType: "COCO", distanceKm: 5.0, etaMin: 24, rating: 4.4, workload: "—", availColor: "grey" },
 ];
 
 function Dispatch() {
@@ -136,9 +138,16 @@ function Dispatch() {
               <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-semibold">Nearby Technicians</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">Sorted by recommendation score</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">COCO preferred · sorted by recommendation</p>
                 </div>
                 <span className="text-xs text-muted-foreground">{technicians.length} within 5 km</span>
+              </div>
+              <div className="px-6 py-2 border-b border-border bg-surface flex items-center gap-4 text-[11px] text-muted-foreground">
+                <span className="font-medium text-foreground">Availability:</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" /> Available</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" /> Busy</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground/40" /> Not logged in</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-destructive" /> Flagged</span>
               </div>
               <div className="divide-y divide-border">
                 {technicians.map((t) => (
@@ -154,22 +163,37 @@ function Dispatch() {
 }
 
 function TechRow({ t, mode }: { t: typeof technicians[number]; mode: "auto" | "manual" }) {
-  const statusColor =
-    t.status === "available"
-      ? "bg-success"
-      : t.status === "busy"
-      ? "bg-warning"
-      : "bg-muted-foreground/40";
-  const statusLabel =
-    t.status === "available" ? "Available" : t.status === "busy" ? "Busy" : "Offline";
+  const dotColor =
+    t.availColor === "green" ? "bg-success"
+    : t.availColor === "amber" ? "bg-warning"
+    : t.availColor === "grey" ? "bg-muted-foreground/40"
+    : "bg-destructive";
+  const borderColor =
+    t.availColor === "green" ? "border-l-success"
+    : t.availColor === "amber" ? "border-l-warning"
+    : t.availColor === "grey" ? "border-l-muted-foreground/30"
+    : "border-l-destructive";
+  const availLabel =
+    t.availColor === "green" ? "Available"
+    : t.availColor === "amber" ? "Busy"
+    : t.availColor === "grey" ? "Not logged in"
+    : "Flagged";
+  const isDisabled = t.availColor === "grey" || t.availColor === "red";
 
   return (
-    <div className={`flex items-center gap-4 px-6 py-4 hover:bg-muted/40 transition-colors ${t.recommended ? "bg-primary-soft/40" : ""}`}>
-      <div className="h-10 w-10 rounded-full bg-accent flex items-center justify-center text-sm font-medium text-accent-foreground shrink-0">
-        {t.name.split(" ").map((n) => n[0]).join("")}
+    <div
+      className={`flex items-center gap-4 px-6 py-4 border-l-2 ${borderColor} hover:bg-muted/40 transition-colors ${
+        t.recommended ? "bg-primary-soft/40" : ""
+      } ${isDisabled ? "opacity-60" : ""}`}
+    >
+      <div className="relative shrink-0">
+        <div className="h-10 w-10 rounded-full bg-accent flex items-center justify-center text-sm font-medium text-accent-foreground">
+          {t.name.split(" ").map((n) => n[0]).join("")}
+        </div>
+        <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card ${dotColor}`} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium truncate">{t.name}</span>
           {t.recommended && (
             <span className="text-[10px] font-medium uppercase tracking-wide bg-primary text-primary-foreground rounded px-1.5 py-0.5">
@@ -177,27 +201,39 @@ function TechRow({ t, mode }: { t: typeof technicians[number]; mode: "auto" | "m
             </span>
           )}
         </div>
-        <div className="text-xs text-muted-foreground mt-0.5 truncate">{t.vendor}</div>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="text-xs text-muted-foreground truncate">{t.vendor}</span>
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+            t.vendorType === "COCO"
+              ? "bg-blue-100 text-blue-700"
+              : "bg-purple-100 text-purple-700"
+          }`}>
+            {t.vendorType}
+          </span>
+        </div>
+        {t.busyUntil && (
+          <div className="text-[10px] text-warning-foreground mt-0.5">Free {t.busyUntil}</div>
+        )}
       </div>
       <Meta icon={<MapPin className="h-3 w-3" />} value={`${t.distanceKm} km`} />
       <Meta icon={<Clock className="h-3 w-3" />} value={`${t.etaMin} min`} />
       <Meta icon={<Star className="h-3 w-3 fill-warning text-warning" />} value={t.rating.toFixed(1)} />
       <div className="text-xs text-muted-foreground w-16 text-right">{t.workload}</div>
-      <div className="flex items-center gap-1.5 w-24">
-        <span className={`h-1.5 w-1.5 rounded-full ${statusColor}`} />
-        <span className="text-xs text-muted-foreground">{statusLabel}</span>
+      <div className="flex items-center gap-1.5 w-28">
+        <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
+        <span className="text-xs text-muted-foreground">{availLabel}</span>
       </div>
       <button
-        disabled={t.status === "offline"}
+        disabled={isDisabled}
         className={`text-xs font-medium rounded-md px-3 py-1.5 ${
-          t.status === "offline"
+          isDisabled
             ? "bg-muted text-muted-foreground cursor-not-allowed"
             : mode === "manual"
             ? "bg-primary text-primary-foreground hover:opacity-90"
             : "border border-border bg-background hover:bg-muted"
         }`}
       >
-        {mode === "manual" ? "Assign" : "Notify"}
+        {isDisabled ? "Unavailable" : mode === "manual" ? "Assign" : "Notify"}
       </button>
     </div>
   );

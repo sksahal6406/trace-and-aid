@@ -8,16 +8,36 @@ import {
   Bell,
   AlertTriangle,
   Clock,
+  Truck,
+  Navigation2,
+  MessageCircle,
 } from "lucide-react";
 
-const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/service-requests", label: "Service Requests", icon: FileText },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
+const navSections = [
+  {
+    label: "Operations",
+    items: [
+      { to: "/", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/service-requests", label: "Service Requests", icon: FileText },
+    ],
+  },
+  {
+    label: "Dispatch & Field",
+    items: [
+      { to: "/dispatch", label: "Dispatch", icon: Truck },
+      { to: "/tracking", label: "Live Tracking", icon: Navigation2 },
+      { to: "/communication", label: "Communication", icon: MessageCircle },
+    ],
+  },
+  {
+    label: "Analytics",
+    items: [
+      { to: "/reports", label: "Reports", icon: BarChart3 },
+    ],
+  },
 ];
 
 function useNow() {
-  // Static for SSR-friendliness; no hydration mismatch.
   return "10:42 AM";
 }
 
@@ -31,33 +51,44 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card">
         <div className="flex h-16 items-center gap-2 px-5 border-b border-border">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
-            RA
+            TV
           </div>
           <div>
-            <div className="text-sm font-semibold leading-none">RoadAssist</div>
-            <div className="text-[11px] text-muted-foreground mt-1">Dispatch OS</div>
+            <div className="text-sm font-semibold leading-none">TVS RoadAssist</div>
+            <div className="text-[11px] text-muted-foreground mt-1">CRM · Dispatch OS</div>
           </div>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {nav.map((item) => {
-            const active = pathname === item.to;
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  active
-                    ? "bg-primary-soft text-accent-foreground font-medium"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
+
+        <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+          {navSections.map((section) => (
+            <div key={section.label}>
+              <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                {section.label}
+              </p>
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const active = pathname === item.to;
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                        active
+                          ? "bg-primary-soft text-accent-foreground font-medium"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
+
         <div className="px-5 py-4 border-t border-border">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
@@ -101,7 +132,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </div>
             <div className="hidden md:block">
               <div className="text-xs font-medium leading-none">Aarav Rao</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">Dispatcher · Mumbai</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">L2 Agent · Mumbai</div>
             </div>
           </div>
         </header>
