@@ -3,9 +3,6 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   FileText,
-  Send,
-  MapPin,
-  MessageSquare,
   BarChart3,
   Search,
   Bell,
@@ -16,9 +13,6 @@ import {
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/service-requests", label: "Service Requests", icon: FileText },
-  { to: "/dispatch", label: "Dispatch", icon: Send },
-  { to: "/tracking", label: "Tracking", icon: MapPin },
-  { to: "/communication", label: "Communication", icon: MessageSquare },
   { to: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
