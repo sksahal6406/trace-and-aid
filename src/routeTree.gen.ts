@@ -15,6 +15,7 @@ import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as DispatchRouteImport } from './routes/dispatch'
 import { Route as CommunicationRouteImport } from './routes/communication'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CaseCaseIdRouteImport } from './routes/case.$caseId'
 
 const TrackingRoute = TrackingRouteImport.update({
   id: '/tracking',
@@ -46,6 +47,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CaseCaseIdRoute = CaseCaseIdRouteImport.update({
+  id: '/case/$caseId',
+  path: '/case/$caseId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/service-requests': typeof ServiceRequestsRoute
   '/tracking': typeof TrackingRoute
+  '/case/$caseId': typeof CaseCaseIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/service-requests': typeof ServiceRequestsRoute
   '/tracking': typeof TrackingRoute
+  '/case/$caseId': typeof CaseCaseIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/service-requests': typeof ServiceRequestsRoute
   '/tracking': typeof TrackingRoute
+  '/case/$caseId': typeof CaseCaseIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/service-requests'
     | '/tracking'
+    | '/case/$caseId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/service-requests'
     | '/tracking'
+    | '/case/$caseId'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/service-requests'
     | '/tracking'
+    | '/case/$caseId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   ServiceRequestsRoute: typeof ServiceRequestsRoute
   TrackingRoute: typeof TrackingRoute
+  CaseCaseIdRoute: typeof CaseCaseIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/case/$caseId': {
+      id: '/case/$caseId'
+      path: '/case/$caseId'
+      fullPath: '/case/$caseId'
+      preLoaderRoute: typeof CaseCaseIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -162,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   ServiceRequestsRoute: ServiceRequestsRoute,
   TrackingRoute: TrackingRoute,
+  CaseCaseIdRoute: CaseCaseIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
