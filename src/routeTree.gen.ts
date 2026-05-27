@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as ServiceRequestsRouteImport } from './routes/service-requests'
 import { Route as DispatchRouteImport } from './routes/dispatch'
+import { Route as CommunicationRouteImport } from './routes/communication'
 import { Route as IndexRouteImport } from './routes/index'
 
 const TrackingRoute = TrackingRouteImport.update({
@@ -29,6 +30,11 @@ const DispatchRoute = DispatchRouteImport.update({
   path: '/dispatch',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CommunicationRoute = CommunicationRouteImport.update({
+  id: '/communication',
+  path: '/communication',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -37,12 +43,14 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/communication': typeof CommunicationRoute
   '/dispatch': typeof DispatchRoute
   '/service-requests': typeof ServiceRequestsRoute
   '/tracking': typeof TrackingRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/communication': typeof CommunicationRoute
   '/dispatch': typeof DispatchRoute
   '/service-requests': typeof ServiceRequestsRoute
   '/tracking': typeof TrackingRoute
@@ -50,20 +58,33 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/communication': typeof CommunicationRoute
   '/dispatch': typeof DispatchRoute
   '/service-requests': typeof ServiceRequestsRoute
   '/tracking': typeof TrackingRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dispatch' | '/service-requests' | '/tracking'
+  fullPaths:
+    | '/'
+    | '/communication'
+    | '/dispatch'
+    | '/service-requests'
+    | '/tracking'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dispatch' | '/service-requests' | '/tracking'
-  id: '__root__' | '/' | '/dispatch' | '/service-requests' | '/tracking'
+  to: '/' | '/communication' | '/dispatch' | '/service-requests' | '/tracking'
+  id:
+    | '__root__'
+    | '/'
+    | '/communication'
+    | '/dispatch'
+    | '/service-requests'
+    | '/tracking'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CommunicationRoute: typeof CommunicationRoute
   DispatchRoute: typeof DispatchRoute
   ServiceRequestsRoute: typeof ServiceRequestsRoute
   TrackingRoute: typeof TrackingRoute
@@ -92,6 +113,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DispatchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/communication': {
+      id: '/communication'
+      path: '/communication'
+      fullPath: '/communication'
+      preLoaderRoute: typeof CommunicationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -104,6 +132,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CommunicationRoute: CommunicationRoute,
   DispatchRoute: DispatchRoute,
   ServiceRequestsRoute: ServiceRequestsRoute,
   TrackingRoute: TrackingRoute,
