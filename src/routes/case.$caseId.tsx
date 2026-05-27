@@ -39,12 +39,22 @@ export const Route = createFileRoute("/case/$caseId")({
 type Phase = "triage" | "assigning" | "assigned" | "tracking" | "delayed" | "onsite";
 type Tab = "overview" | "assignment" | "tracking" | "communication";
 
-const technicians = [
+const technicians: {
+  id: string;
+  name: string;
+  vendor: string;
+  distanceKm: number;
+  etaMin: number;
+  rating: number;
+  jobs: number;
+  status: "available" | "busy";
+  recommended?: boolean;
+}[] = [
   { id: "T-101", name: "Ramesh Patil", vendor: "Mahalaxmi Towing", distanceKm: 1.8, etaMin: 9, rating: 4.9, jobs: 0, status: "available", recommended: true },
   { id: "T-102", name: "Imran Sheikh", vendor: "BKC Auto Rescue", distanceKm: 2.4, etaMin: 12, rating: 4.7, jobs: 0, status: "available" },
   { id: "T-104", name: "Anil Yadav", vendor: "Western Roadside", distanceKm: 4.2, etaMin: 19, rating: 4.8, jobs: 0, status: "available" },
   { id: "T-103", name: "Suresh Kumar", vendor: "Mumbai Quick Tow", distanceKm: 3.1, etaMin: 16, rating: 4.6, jobs: 1, status: "busy" },
-] as const;
+];
 
 function CaseDetail() {
   const { caseId } = Route.useParams();
