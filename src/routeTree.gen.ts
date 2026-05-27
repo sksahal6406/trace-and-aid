@@ -9,8 +9,14 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ServiceRequestsRouteImport } from './routes/service-requests'
 import { Route as IndexRouteImport } from './routes/index'
 
+const ServiceRequestsRoute = ServiceRequestsRouteImport.update({
+  id: '/service-requests',
+  path: '/service-requests',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -19,28 +25,39 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/service-requests': typeof ServiceRequestsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/service-requests': typeof ServiceRequestsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/service-requests': typeof ServiceRequestsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/service-requests'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/service-requests'
+  id: '__root__' | '/' | '/service-requests'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ServiceRequestsRoute: typeof ServiceRequestsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/service-requests': {
+      id: '/service-requests'
+      path: '/service-requests'
+      fullPath: '/service-requests'
+      preLoaderRoute: typeof ServiceRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -53,6 +70,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ServiceRequestsRoute: ServiceRequestsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
