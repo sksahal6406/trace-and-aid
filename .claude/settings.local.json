@@ -3,7 +3,14 @@
     "allow": [
       "Bash(python -c ' *)",
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_pages",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(xargs ls -la)",
+      "Bash(npx vite *)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page",
+      "PowerShell(Start-Process \"C:\\\\Program Files\\\\BraveSoftware\\\\Brave-Browser\\\\Application\\\\brave.exe\" -ArgumentList \"--remote-debugging-port=9222\", \"http://localhost:5174/dispatch\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Start-Process -FilePath \"C:\\\\Program Files \\(x86\\)\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe\" -ArgumentList \"--remote-debugging-port=9222\", \"--user-data-dir=C:\\\\Temp\\\\edge-debug\", \"http://localhost:5173\" -PassThru)",
+      "PowerShell(Invoke-RestMethod \"http://localhost:9222/json\" -ErrorAction SilentlyContinue)",
+      "PowerShell($edgePids = Get-Process msedge -ErrorAction SilentlyContinue | Select-Object Id; $edgePids | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }; Start-Process -FilePath \"C:\\\\Program Files \\(x86\\)\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe\" -ArgumentList \"--remote-debugging-port=9222\", \"--no-first-run\", \"--no-default-browser-check\", \"--user-data-dir=C:\\\\Temp\\\\edge-dbg2\" -WindowStyle Hidden; Start-Sleep -Seconds 4; try { $result = Invoke-RestMethod \"http://localhost:9222/json/version\" -TimeoutSec 5; $result } catch { \"Failed: $_\" })"
     ]
   }
 }
