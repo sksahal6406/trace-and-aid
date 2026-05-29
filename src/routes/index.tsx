@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppLayout, PageHeader } from "@/components/AppLayout";
 import { useState } from "react";
+import { LiveMapPanel } from "@/components/LiveMapPanel";
 import {
   Activity,
   Users,
@@ -204,31 +205,8 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Active regions */}
-          <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
-            <h3 className="text-sm font-semibold mb-1">Active Regions</h3>
-            <p className="text-xs text-muted-foreground mb-4">Technician utilization across hubs</p>
-            <div className="space-y-4">
-              {regions.map((r) => (
-                <div key={r.name}>
-                  <div className="flex items-center justify-between text-sm mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="font-medium">{r.name}</span>
-                      <span className="text-xs text-muted-foreground">· {r.active} active</span>
-                    </div>
-                    <span className="text-xs font-medium text-muted-foreground">{r.utilization}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${r.utilization > 75 ? "bg-warning" : "bg-primary"}`}
-                      style={{ width: `${r.utilization}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Live field map */}
+          <LiveMapPanel />
         </div>
 
         {/* Role-specific bottom panel */}
