@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppLayout, PageHeader } from "@/components/AppLayout";
 import { useEffect, useState } from "react";
 import {
@@ -19,6 +19,9 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/service-requests")({
+  validateSearch: (search: Record<string, unknown>): { queue: QueueKey } => ({
+    queue: (search.queue as QueueKey) || "all",
+  }),
   head: () => ({
     meta: [
       { title: "Service Requests · TVS RoadAssist" },
@@ -331,7 +334,10 @@ function QueueItem({
 }
 
 function ServiceRequests() {
-  const [selectedQueue, setSelectedQueue] = useState<QueueKey>("all");
+  const { queue: selectedQueue } = Route.useSearch();
+  const navigate = useNavigate();
+  const setSelectedQueue = (q: QueueKey) =>
+    navigate({ to: "/service-requests", search: { queue: q }, replace: true });
   const [showToast, setShowToast] = useState(false);
 
   useEffect(() => {

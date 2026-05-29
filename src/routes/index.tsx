@@ -178,16 +178,29 @@ function Dashboard() {
                 <div className="text-xs text-success">+2.1% vs yesterday</div>
               </div>
             </div>
-            <div className="flex items-end gap-2 h-40">
-              {slaTrend.map((v, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                  <div
-                    className="w-full rounded-md bg-primary/80 hover:bg-primary transition-colors"
-                    style={{ height: `${v}%` }}
-                  />
-                  <span className="text-[10px] text-muted-foreground">{i + 1}h</span>
-                </div>
-              ))}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-end gap-1.5 h-36">
+                {slaTrend.map((v, i) => {
+                  const barPx = Math.round(v * 1.12); // 112px max at 100%
+                  const color = v >= 93 ? "bg-emerald-500" : v >= 88 ? "bg-primary" : "bg-amber-400";
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
+                      <span className="text-[10px] font-bold tabular-nums leading-none text-foreground">{v}%</span>
+                      <div
+                        className={`w-full rounded-t-sm ${color} transition-colors`}
+                        style={{ height: `${barPx}px` }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-1.5 border-t border-border pt-1">
+                {slaTrend.map((_, i) => (
+                  <div key={i} className="flex-1 text-center">
+                    <span className="text-[10px] text-muted-foreground">{i + 1}h</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -228,6 +241,7 @@ function Dashboard() {
               </div>
               <Link
                 to="/service-requests"
+                search={{ queue: "all" }}
                 className="text-xs text-primary flex items-center gap-1 hover:underline"
               >
                 View all <ChevronRight className="h-3 w-3" />
@@ -330,6 +344,7 @@ function Dashboard() {
                     </div>
                     <Link
                       to="/service-requests"
+                      search={{ queue: "all" }}
                       className="text-xs text-primary flex items-center gap-1 hover:underline whitespace-nowrap mt-1"
                     >
                       View queue <ChevronRight className="h-3 w-3" />

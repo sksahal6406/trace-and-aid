@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppLayout } from "@/components/AppLayout";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, Sparkles, MapPin, Phone, MessageSquare, Timer,
   CheckCircle2, Circle, AlertTriangle, Car, User,
   Send, Paperclip, CheckCheck, Star, Clock, Zap, TowerControl,
   ShieldCheck, ChevronRight, Radio, AlertOctagon, Navigation,
+  Hand, Eye, XCircle, UserCheck, RefreshCw, Filter,
 } from "lucide-react";
 
 export const Route = createFileRoute("/case/$caseId")({
@@ -233,6 +234,9 @@ const caseDataMap: Record<string, CaseData> = {
   },
 };
 
+type BidStatus = "idle" | "notified" | "viewing" | "accepted";
+type VendorFilter = "all" | "COCO" | "ASP";
+
 const technicians: {
   id: string;
   name: string;
@@ -245,13 +249,75 @@ const technicians: {
   availColor: "green" | "amber" | "grey" | "red";
   busyUntil?: string;
   recommended?: boolean;
+  bidDelayMs?: number;
 }[] = [
-  { id: "T-101", name: "Ramesh Patil", vendor: "Mahalaxmi Towing", vendorType: "COCO", distanceKm: 1.8, etaMin: 9, rating: 4.9, jobs: 0, availColor: "green", recommended: true },
-  { id: "T-102", name: "Imran Sheikh", vendor: "BKC Auto Rescue", vendorType: "COCO", distanceKm: 2.4, etaMin: 12, rating: 4.7, jobs: 0, availColor: "green" },
-  { id: "T-104", name: "Anil Yadav", vendor: "Western Roadside", vendorType: "ASP", distanceKm: 4.2, etaMin: 19, rating: 4.8, jobs: 0, availColor: "green" },
-  { id: "T-103", name: "Suresh Kumar", vendor: "Mumbai Quick Tow", vendorType: "ASP", distanceKm: 3.1, etaMin: 16, rating: 4.6, jobs: 1, availColor: "amber", busyUntil: "~11:05 AM" },
-  { id: "T-105", name: "Vijay Singh", vendor: "City Tow 24x7", vendorType: "COCO", distanceKm: 5.8, etaMin: 28, rating: 4.3, jobs: 0, availColor: "grey" },
+  { id: "T-101", name: "Ramesh Patil",  vendor: "Mahalaxmi Towing",  vendorType: "COCO", distanceKm: 1.8, etaMin: 9,  rating: 4.9, jobs: 0, availColor: "green", recommended: true, bidDelayMs: 7000 },
+  { id: "T-102", name: "Imran Sheikh",  vendor: "BKC Auto Rescue",   vendorType: "COCO", distanceKm: 2.4, etaMin: 12, rating: 4.7, jobs: 0, availColor: "green", bidDelayMs: 18000 },
+  { id: "T-104", name: "Anil Yadav",    vendor: "Western Roadside",  vendorType: "ASP",  distanceKm: 4.2, etaMin: 19, rating: 4.8, jobs: 0, availColor: "green", bidDelayMs: 28000 },
+  { id: "T-103", name: "Suresh Kumar",  vendor: "Mumbai Quick Tow",  vendorType: "ASP",  distanceKm: 3.1, etaMin: 16, rating: 4.6, jobs: 1, availColor: "amber", busyUntil: "~11:05 AM" },
+  { id: "T-105", name: "Vijay Singh",   vendor: "City Tow 24x7",     vendorType: "COCO", distanceKm: 5.8, etaMin: 28, rating: 4.3, jobs: 0, availColor: "grey" },
 ];
+
+const BID_TIMER_DURATION = 45;
+const NOTIFIED_IDS = ["T-101", "T-102", "T-104"];
+
+// ── Route animation helpers ──────────────────────────────────────────────────
+// Waypoints follow the SVG road grid (roads at x=150,400,650 and y=100,280,430)
+const ROUTE_WP = [
+  { x: 120, y: 460 },  // origin
+  { x: 150, y: 460 },
+  { x: 150, y: 280 },  // north on left road
+  { x: 400, y: 280 },  // east on main road
+  { x: 400, y: 200 },  // north toward destination
+  { x: 640, y: 200 },  // customer
+];
+const ROUTE_SEGS = ROUTE_WP.slice(1).map((p, i) =>
+  Math.hypot(p.x - ROUTE_WP[i].x, p.y - ROUTE_WP[i].y)
+);
+const ROUTE_TOTAL = ROUTE_SEGS.reduce((a, b) => a + b, 0); // 780 units
+const ROUTE_CUM = ROUTE_SEGS.reduce<number[]>(
+  (acc, l) => { acc.push(acc[acc.length - 1] + l); return acc; }, [0]
+);
+
+function wpPos(progress: number): { x: number; y: number } {
+  const dist = Math.min(Math.max(progress, 0), 1) * ROUTE_TOTAL;
+  for (let i = 0; i < ROUTE_WP.length - 1; i++) {
+    if (dist <= ROUTE_CUM[i + 1]) {
+      const span = ROUTE_CUM[i + 1] - ROUTE_CUM[i];
+      const t = span > 0 ? (dist - ROUTE_CUM[i]) / span : 0;
+      return {
+        x: ROUTE_WP[i].x + (ROUTE_WP[i + 1].x - ROUTE_WP[i].x) * t,
+        y: ROUTE_WP[i].y + (ROUTE_WP[i + 1].y - ROUTE_WP[i].y) * t,
+      };
+    }
+  }
+  return { ...ROUTE_WP[ROUTE_WP.length - 1] };
+}
+
+function wpPath(progress: number, done: boolean): string {
+  const dist = Math.min(Math.max(progress, 0), 1) * ROUTE_TOTAL;
+  const pos = wpPos(progress);
+  if (done) {
+    const pts = [ROUTE_WP[0]];
+    for (let i = 1; i < ROUTE_WP.length; i++) {
+      if (ROUTE_CUM[i] < dist) pts.push(ROUTE_WP[i]); else break;
+    }
+    if (progress > 0.001) pts.push(pos);
+    return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  } else {
+    const pts: { x: number; y: number }[] = [pos];
+    for (let i = 1; i < ROUTE_WP.length; i++) {
+      if (ROUTE_CUM[i] > dist) pts.push(ROUTE_WP[i]);
+    }
+    return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  }
+}
+
+function parseSlaSeconds(display: string): number | null {
+  const m = display.match(/^(\d+):(\d+)$/);
+  if (!m) return null;
+  return parseInt(m[1]) * 60 + parseInt(m[2]);
+}
 
 function CaseDetail() {
   const { caseId } = Route.useParams();
@@ -259,6 +325,18 @@ function CaseDetail() {
 
   const [phase, setPhase] = useState<Phase>(caseData.initialPhase);
   const [tab, setTab] = useState<Tab>(caseData.initialTab);
+
+  // Live SLA countdown
+  const [slaSeconds, setSlaSeconds] = useState<number | null>(() => parseSlaSeconds(caseData.slaDisplay));
+  useEffect(() => {
+    if (slaSeconds === null || slaSeconds <= 0) return;
+    const id = setInterval(() => setSlaSeconds((s) => (s !== null ? Math.max(0, s - 1) : null)), 1000);
+    return () => clearInterval(id);
+  }, [slaSeconds]);
+  const liveSlaDisplay =
+    slaSeconds === null ? caseData.slaDisplay
+    : slaSeconds === 0 ? "BREACHED"
+    : `${String(Math.floor(slaSeconds / 60)).padStart(2, "0")}:${String(slaSeconds % 60).padStart(2, "0")}`;
 
   useEffect(() => {
     if (phase === "tracking") {
@@ -276,7 +354,7 @@ function CaseDetail() {
     <AppLayout>
       <div className="p-8 max-w-[1400px] mx-auto">
         <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">
-          <Link to="/service-requests" className="hover:text-foreground inline-flex items-center gap-1">
+          <Link to="/service-requests" search={{ queue: "all" }} className="hover:text-foreground inline-flex items-center gap-1">
             <ArrowLeft className="h-3.5 w-3.5" /> Service Requests
           </Link>
           <ChevronRight className="h-3 w-3" />
@@ -313,13 +391,13 @@ function CaseDetail() {
                 <div className="text-[11px] text-muted-foreground uppercase tracking-wide flex items-center gap-1 justify-end">
                   <Timer className="h-3 w-3" /> {isCompleted ? "Resolved" : "SLA Remaining"}
                 </div>
-                <div className={`text-2xl font-mono font-semibold ${
-                  isBreached ? "text-destructive"
+                <div className={`text-2xl font-mono font-semibold tabular-nums ${
+                  isBreached || liveSlaDisplay === "BREACHED" ? "text-destructive"
                   : isCompleted ? "text-success"
                   : phase === "delayed" ? "text-warning-foreground"
                   : "text-success"
                 }`}>
-                  {phase === caseData.initialPhase ? caseData.slaDisplay : phaseMeta.slaTimer}
+                  {phase === caseData.initialPhase ? liveSlaDisplay : phaseMeta.slaTimer}
                 </div>
               </div>
               {!isCompleted && (
@@ -372,7 +450,7 @@ function CaseDetail() {
             <div className="lg:col-span-2 space-y-6">
               {tab === "overview" && <OverviewTab phase={phase} caseData={caseData} setPhase={setPhase} />}
               {tab === "assignment" && <AssignmentTab phase={phase} caseData={caseData} onAssign={() => setPhase("assigned")} />}
-              {tab === "tracking" && <TrackingTab phase={phase} caseData={caseData} />}
+              {tab === "tracking" && <TrackingTab phase={phase} caseData={caseData} slaSeconds={slaSeconds} />}
               {tab === "communication" && <CommunicationTab phase={phase} caseData={caseData} />}
             </div>
             <ActivityTimeline phase={phase} caseData={caseData} />
@@ -741,6 +819,7 @@ function CompletedView({ caseId, caseData }: { caseId: string; caseData: CaseDat
         </div>
         <Link
           to="/service-requests"
+          search={{ queue: "all" }}
           className="block rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] hover:border-primary/40 transition-colors"
         >
           <div className="text-sm font-semibold flex items-center justify-between">
@@ -757,35 +836,84 @@ function CompletedView({ caseId, caseData }: { caseId: string; caseData: CaseDat
 /* ── ASSIGNMENT ── */
 
 function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: CaseData; onAssign: () => void }) {
-  const assigned = phase === "assigned" || phase === "tracking" || phase === "delayed" || phase === "onsite" || phase === "completing" || phase === "breached";
+  const isAlreadyAssigned = phase === "assigned" || phase === "tracking" || phase === "delayed" || phase === "onsite" || phase === "completing" || phase === "breached";
+
+  const [assignMode, setAssignMode] = useState<"auto" | "manual">("auto");
+  const [vendorFilter, setVendorFilter] = useState<VendorFilter>("all");
+  const [timerSeconds, setTimerSeconds] = useState(BID_TIMER_DURATION);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerExpired, setTimerExpired] = useState(false);
+  const [bidStatuses, setBidStatuses] = useState<Record<string, BidStatus>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [localAssignedId, setLocalAssignedId] = useState<string | null>(null);
+  const bidTimeouts = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const filteredTechs = technicians.filter((t) =>
+    vendorFilter === "all" ? true : t.vendorType === vendorFilter
+  );
+
+  const acceptedTechs = technicians.filter((t) => bidStatuses[t.id] === "accepted");
+  const finalAssignedId = isAlreadyAssigned ? technicians.find((t) => t.recommended)?.id ?? null : localAssignedId;
+
+  // bid countdown
+  useEffect(() => {
+    if (!timerRunning) return;
+    if (timerSeconds <= 0) { setTimerRunning(false); setTimerExpired(true); return; }
+    const id = setInterval(() => {
+      setTimerSeconds((s) => { if (s <= 1) { setTimerRunning(false); setTimerExpired(true); return 0; } return s - 1; });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [timerRunning, timerSeconds]);
+
+  function startBid() {
+    bidTimeouts.current.forEach(clearTimeout);
+    bidTimeouts.current = [];
+    setTimerSeconds(BID_TIMER_DURATION);
+    setTimerExpired(false);
+    setTimerRunning(true);
+    setBidStatuses({});
+
+    NOTIFIED_IDS.forEach((id) => {
+      const tech = technicians.find((t) => t.id === id)!;
+      setBidStatuses((prev) => ({ ...prev, [id]: "notified" }));
+      const t1 = setTimeout(() => setBidStatuses((prev) => ({ ...prev, [id]: "viewing" })), 2000);
+      if (tech.bidDelayMs !== undefined && tech.bidDelayMs < BID_TIMER_DURATION * 1000) {
+        const t2 = setTimeout(() => setBidStatuses((prev) => ({ ...prev, [id]: "accepted" })), tech.bidDelayMs);
+        bidTimeouts.current.push(t2);
+      }
+      bidTimeouts.current.push(t1);
+    });
+  }
+
+  function resetBid() {
+    bidTimeouts.current.forEach(clearTimeout);
+    bidTimeouts.current = [];
+    setTimerSeconds(BID_TIMER_DURATION);
+    setTimerRunning(false);
+    setTimerExpired(false);
+    setBidStatuses({});
+    setSelectedId(null);
+    setLocalAssignedId(null);
+  }
+
+  function acceptBid(techId: string) {
+    setLocalAssignedId(techId);
+    setTimerRunning(false);
+    bidTimeouts.current.forEach(clearTimeout);
+    onAssign();
+  }
+
+  const timerColor = timerSeconds > 20 ? "bg-primary" : timerSeconds > 10 ? "bg-amber-500" : "bg-destructive";
+  const progress = ((BID_TIMER_DURATION - timerSeconds) / BID_TIMER_DURATION) * 100;
+  const mm = String(Math.floor(timerSeconds / 60)).padStart(2, "0");
+  const ss = String(timerSeconds % 60).padStart(2, "0");
 
   return (
     <>
-      {phase === "assigning" && (
-        <div className="rounded-xl border border-primary/30 bg-primary-soft p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Radio className="h-4 w-4 text-primary animate-pulse" />
-            <h3 className="text-sm font-semibold text-accent-foreground">Auto-bidding in progress</h3>
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">
-            Broadcast sent to 3 nearest {caseData.techVendorType === "COCO" ? "COCO" : ""} vendors. First to accept wins.
-          </p>
-          <div className="flex items-center justify-between text-xs mb-1.5">
-            <span className="text-muted-foreground">Time remaining</span>
-            <span className="font-mono font-medium">00:42</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-card/80 overflow-hidden">
-            <div className="h-full w-[58%] bg-primary rounded-full" />
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-xs text-success">
-            <CheckCircle2 className="h-3.5 w-3.5" /> {caseData.techName} — viewing now
-          </div>
-        </div>
-      )}
-
-      {assigned && (
+      {/* Already assigned banner */}
+      {isAlreadyAssigned && (
         <div className="rounded-xl border border-success/30 bg-success-soft p-5 flex items-center gap-3">
-          <CheckCircle2 className="h-5 w-5 text-success" />
+          <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
           <div className="flex-1">
             <div className="text-sm font-semibold text-success">{caseData.techName} assigned</div>
             <div className="text-xs text-success/80">
@@ -798,18 +926,157 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
         </div>
       )}
 
+      {/* Mode switcher + bid/manual panel — only when not yet assigned */}
+      {!isAlreadyAssigned && (
+        <div className="rounded-xl border border-border bg-card shadow-[var(--shadow-card)] overflow-hidden">
+          {/* Mode toggle */}
+          <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-3">
+            <div className="flex rounded-lg border border-border bg-muted p-1 text-sm">
+              <button
+                onClick={() => { setAssignMode("auto"); resetBid(); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-xs font-medium ${
+                  assignMode === "auto" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                <Zap className="h-3.5 w-3.5" /> Auto-Bidding
+              </button>
+              <button
+                onClick={() => { setAssignMode("manual"); resetBid(); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-xs font-medium ${
+                  assignMode === "manual" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                <Hand className="h-3.5 w-3.5" /> Manual
+              </button>
+            </div>
+            {(timerRunning || timerExpired) && !localAssignedId && (
+              <button onClick={resetBid} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                <RefreshCw className="h-3 w-3" /> Reset
+              </button>
+            )}
+          </div>
+
+          {/* Auto-bid panel */}
+          {assignMode === "auto" && (
+            <div className="p-5 border-b border-border bg-primary-soft/40 space-y-4">
+              <div className="flex items-center gap-2">
+                <Radio className={`h-4 w-4 text-primary ${timerRunning ? "animate-pulse" : ""}`} />
+                <span className="text-sm font-semibold text-accent-foreground">
+                  {timerRunning ? "Broadcast Active" : timerExpired ? "Bid Expired" : "Auto-Bidding"}
+                </span>
+                <span className="text-xs text-muted-foreground ml-auto">{NOTIFIED_IDS.length} vendors notified</span>
+              </div>
+
+              <div className="bg-card rounded-lg border border-border p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">{timerExpired ? "Time expired" : "Time remaining"}</span>
+                  <span className={`text-3xl font-mono font-semibold tabular-nums ${
+                    timerExpired ? "text-destructive" : timerSeconds <= 10 ? "text-destructive" : timerSeconds <= 20 ? "text-amber-500" : ""
+                  }`}>{mm}:{ss}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-1000 ${timerColor}`} style={{ width: `${timerRunning || timerExpired ? progress : 0}%` }} />
+                </div>
+
+                {!timerRunning && !timerExpired && (
+                  <button onClick={startBid} className="w-full rounded-lg bg-primary text-primary-foreground text-sm font-medium py-2 flex items-center justify-center gap-2 hover:opacity-90">
+                    <Zap className="h-4 w-4" /> Start Auto-Bidding
+                  </button>
+                )}
+                {timerExpired && acceptedTechs.length === 0 && (
+                  <button onClick={startBid} className="w-full rounded-lg border border-border bg-background text-sm font-medium py-2 flex items-center justify-center gap-2 hover:bg-muted">
+                    <RefreshCw className="h-3.5 w-3.5" /> Re-broadcast
+                  </button>
+                )}
+              </div>
+
+              {/* Live bid status */}
+              {(timerRunning || timerExpired) && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Live Bids</p>
+                  {NOTIFIED_IDS.map((id) => {
+                    const tech = technicians.find((t) => t.id === id)!;
+                    const status = bidStatuses[id] ?? "notified";
+                    return (
+                      <div key={id} className={`flex items-center gap-3 rounded-lg border p-2.5 ${status === "accepted" ? "border-success/40 bg-success/10" : "border-border bg-card"}`}>
+                        <BidIcon status={status} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium">{tech.name}</p>
+                          <p className="text-[10px] text-muted-foreground">{bidStatusLabel(status)} · {tech.etaMin} min ETA</p>
+                        </div>
+                        {status === "accepted" && (
+                          <button onClick={() => acceptBid(id)} className="text-[11px] font-semibold bg-success text-white rounded-md px-2.5 py-1 hover:opacity-90 shrink-0">
+                            Accept
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {timerExpired && acceptedTechs[0] && !localAssignedId && (
+                <button onClick={() => acceptBid(acceptedTechs[0].id)} className="w-full rounded-lg bg-success text-white text-sm font-medium py-2 flex items-center justify-center gap-2 hover:opacity-90">
+                  <CheckCircle2 className="h-4 w-4" /> Confirm {acceptedTechs[0].name}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Manual panel */}
+          {assignMode === "manual" && (
+            <div className="p-5 border-b border-border space-y-3">
+              <p className="text-xs text-muted-foreground">Select a technician from the list below, then confirm assignment.</p>
+              {selectedId ? (
+                <div className="rounded-lg border border-border bg-muted/40 p-3 flex items-center gap-3">
+                  <UserCheck className="h-4 w-4 text-primary" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{technicians.find((t) => t.id === selectedId)?.name}</p>
+                    <p className="text-xs text-muted-foreground">{technicians.find((t) => t.id === selectedId)?.vendor}</p>
+                  </div>
+                  <button onClick={() => setSelectedId(null)}><XCircle className="h-4 w-4 text-muted-foreground" /></button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">No technician selected — click a row below</p>
+              )}
+              <button
+                disabled={!selectedId}
+                onClick={() => { if (selectedId) acceptBid(selectedId); }}
+                className="w-full rounded-lg bg-primary text-primary-foreground text-sm font-medium py-2 disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+              >
+                Assign Technician
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Technician list */}
       <div className="rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h3 className="text-sm font-semibold">Nearby technicians</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">COCO preferred · ranked by ETA & availability</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {filteredTechs.length} within 6 km{vendorFilter !== "all" ? ` · ${vendorFilter} only` : " · COCO preferred"}
+            </p>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-primary">
-            <Zap className="h-3.5 w-3.5" /> Auto-bid recommended
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground ml-1.5" />
+            {(["all", "COCO", "ASP"] as VendorFilter[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setVendorFilter(f)}
+                className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors ${
+                  vendorFilter === f ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f === "all" ? "All" : f}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="px-5 py-2 border-b border-border bg-surface flex items-center gap-4 text-[11px] text-muted-foreground">
+        <div className="px-5 py-2 border-b border-border bg-surface flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
           <span className="font-medium text-foreground">Availability:</span>
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" /> Available</span>
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" /> Busy</span>
@@ -818,9 +1085,13 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
         </div>
 
         <div className="divide-y divide-border">
-          {technicians.map((t) => {
+          {filteredTechs.length === 0 ? (
+            <p className="px-5 py-8 text-sm text-muted-foreground text-center">No technicians match the filter.</p>
+          ) : filteredTechs.map((t) => {
             const borderColor =
-              t.availColor === "green" ? "border-l-success"
+              finalAssignedId === t.id ? "border-l-success"
+              : selectedId === t.id ? "border-l-primary"
+              : t.availColor === "green" ? "border-l-success"
               : t.availColor === "amber" ? "border-l-warning"
               : t.availColor === "grey" ? "border-l-muted-foreground/30"
               : "border-l-destructive";
@@ -830,12 +1101,21 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
               : t.availColor === "grey" ? "bg-muted-foreground/40"
               : "bg-destructive";
             const isDisabled = t.availColor === "grey" || t.availColor === "red";
+            const bidStatus = bidStatuses[t.id] ?? "idle";
+            const isAssigned = finalAssignedId === t.id;
+
             return (
               <div
                 key={t.id}
-                className={`flex items-center gap-3 px-5 py-3.5 border-l-2 ${borderColor} ${
-                  t.recommended && !assigned ? "bg-primary-soft/40" : ""
-                } ${assigned && !t.recommended ? "opacity-50" : ""} ${isDisabled ? "opacity-60" : ""}`}
+                onClick={() => { if (!isDisabled && !isAlreadyAssigned && assignMode === "manual") setSelectedId(t.id); }}
+                className={`flex items-center gap-3 px-5 py-3.5 border-l-2 ${borderColor} transition-colors ${
+                  isAssigned ? "bg-success/10"
+                  : selectedId === t.id ? "bg-primary-soft/50"
+                  : t.recommended && !isAlreadyAssigned ? "bg-primary-soft/30"
+                  : ""
+                } ${isDisabled ? "opacity-60" : ""} ${
+                  !isDisabled && !isAlreadyAssigned && assignMode === "manual" ? "cursor-pointer hover:bg-muted/40" : "hover:bg-muted/20"
+                }`}
               >
                 <div className="relative shrink-0">
                   <div className="h-9 w-9 rounded-full bg-accent flex items-center justify-center text-xs font-medium text-accent-foreground">
@@ -847,8 +1127,17 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-sm font-medium">{t.name}</span>
                     {t.recommended && (
-                      <span className="text-[10px] font-medium uppercase tracking-wide bg-primary text-primary-foreground rounded px-1.5 py-0.5">
-                        Best match
+                      <span className="text-[10px] font-medium uppercase tracking-wide bg-primary text-primary-foreground rounded px-1.5 py-0.5">Best match</span>
+                    )}
+                    {isAssigned && (
+                      <span className="text-[10px] font-medium bg-success text-white rounded px-1.5 py-0.5">Assigned</span>
+                    )}
+                    {bidStatus === "accepted" && !isAssigned && (
+                      <span className="text-[10px] font-medium bg-success/20 text-success rounded px-1.5 py-0.5">Bid Accepted</span>
+                    )}
+                    {bidStatus === "viewing" && (
+                      <span className="text-[10px] font-medium bg-primary/10 text-primary rounded px-1.5 py-0.5 flex items-center gap-1">
+                        <Eye className="h-2.5 w-2.5" /> Viewing
                       </span>
                     )}
                   </div>
@@ -865,25 +1154,32 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
                   <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {t.etaMin} min</span>
                   <span className="flex items-center gap-1"><Star className="h-3 w-3 fill-warning text-warning" /> {t.rating}</span>
                 </div>
-                {assigned && t.recommended ? (
-                  <span className="text-xs font-medium text-success inline-flex items-center gap-1">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Assigned
-                  </span>
-                ) : (
-                  <button
-                    onClick={t.recommended ? onAssign : undefined}
-                    disabled={assigned || isDisabled}
-                    className={`text-xs font-medium rounded-md px-3 py-1.5 ${
-                      t.recommended && !assigned
-                        ? "bg-primary text-primary-foreground hover:opacity-90"
-                        : isDisabled
-                        ? "bg-muted text-muted-foreground cursor-not-allowed"
-                        : "border border-border bg-background text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {t.recommended ? "Assign" : isDisabled ? "Unavailable" : "Notify"}
-                  </button>
-                )}
+                <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {isAssigned ? (
+                    <span className="text-xs font-medium text-success flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Assigned</span>
+                  ) : isAlreadyAssigned ? (
+                    <span className="text-xs text-muted-foreground">{t.recommended ? "Was recommended" : "—"}</span>
+                  ) : isDisabled ? (
+                    <span className="text-xs font-medium rounded-md px-3 py-1.5 bg-muted text-muted-foreground cursor-not-allowed">Unavailable</span>
+                  ) : assignMode === "manual" ? (
+                    <button
+                      onClick={() => setSelectedId(t.id)}
+                      className={`text-xs font-medium rounded-md px-3 py-1.5 transition-colors ${
+                        selectedId === t.id ? "bg-primary text-primary-foreground" : "border border-border bg-background hover:bg-muted"
+                      }`}
+                    >
+                      {selectedId === t.id ? "Selected" : "Select"}
+                    </button>
+                  ) : bidStatus === "accepted" ? (
+                    <button onClick={() => acceptBid(t.id)} className="text-xs font-semibold rounded-md px-3 py-1.5 bg-success text-white hover:opacity-90">
+                      Accept Bid
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground px-3 py-1.5">
+                      {bidStatus === "viewing" ? "Viewing…" : bidStatus === "notified" ? "Notified" : "—"}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -893,33 +1189,118 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
   );
 }
 
+function BidIcon({ status }: { status: BidStatus }) {
+  if (status === "accepted") return <CheckCircle2 className="h-4 w-4 text-success shrink-0" />;
+  if (status === "viewing") return <Eye className="h-4 w-4 text-primary shrink-0 animate-pulse" />;
+  return <span className="h-2 w-2 rounded-full bg-muted-foreground/40 mx-1 shrink-0" />;
+}
+
+function bidStatusLabel(status: BidStatus) {
+  if (status === "accepted") return "Accepted";
+  if (status === "viewing") return "Viewing now";
+  return "Notified";
+}
+
 /* ── TRACKING ── */
 
-function TrackingTab({ phase, caseData }: { phase: Phase; caseData: CaseData }) {
-  const onsite = phase === "onsite" || phase === "completing";
-  const delayed = phase === "delayed";
-  const breached = phase === "breached";
+function TrackingTab({ phase, caseData, slaSeconds }: {
+  phase: Phase;
+  caseData: CaseData;
+  slaSeconds: number | null;
+}) {
+  const isOnsite = phase === "onsite" || phase === "completing";
+  const isDelayed = phase === "delayed";
+  const isBreached = phase === "breached";
+
+  const speedKmhBase = isOnsite ? 0 : isBreached ? 3 : isDelayed ? 6 : 22;
+
+  const initProgress = isOnsite ? 1.0 : isBreached ? 0.42 : isDelayed ? 0.38 : phase === "tracking" ? 0.28 : 0.04;
+  const initEtaSec   = isOnsite ? 0 : (isDelayed || isBreached) ? 9 * 60 : 4 * 60;
+  const initDistKm   = isOnsite ? 0 : (isDelayed || isBreached) ? 0.35 : 0.42;
+
+  const [driverProgress, setDriverProgress] = useState(initProgress);
+  const [etaSec, setEtaSec] = useState(initEtaSec);
+  const [distKm, setDistKm] = useState(initDistKm);
+  const [displaySpeed, setDisplaySpeed] = useState(speedKmhBase);
+
+  // 10× real-time for visual demo
+  const visualProgressPerSec = isOnsite ? 0 : isBreached ? 0.009 : isDelayed ? 0.011 : 0.029;
+
+  // Synchronized: ETA and distance reach 0 exactly when driverProgress reaches 1
+  const remainingProg = Math.max(0.001, 1 - initProgress);
+  const etaDecPerSec  = isOnsite ? 0 : (initEtaSec  * visualProgressPerSec) / remainingProg;
+  const distDecPerSec = isOnsite ? 0 : (initDistKm  * visualProgressPerSec) / remainingProg;
+
+  useEffect(() => {
+    if (isOnsite) return;
+    const id = setInterval(() => {
+      setDriverProgress(p => Math.min(1, p + visualProgressPerSec));
+      setEtaSec(e => Math.max(0, e - etaDecPerSec));
+      setDistKm(d => Math.max(0, d - distDecPerSec));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isOnsite, visualProgressPerSec, etaDecPerSec, distDecPerSec]);
+
+  // subtle speed jitter for realism
+  useEffect(() => {
+    if (isOnsite || speedKmhBase === 0) return;
+    const id = setInterval(() => {
+      setDisplaySpeed(Math.round(Math.max(1, speedKmhBase + (Math.random() - 0.5) * (isDelayed ? 4 : 8))));
+    }, 2500);
+    return () => clearInterval(id);
+  }, [isOnsite, speedKmhBase, isDelayed]);
+
+  const arrived = driverProgress >= 1 || isOnsite;
+
+  const etaDisplay = arrived ? "Arrived"
+    : etaSec < 60 ? "<1 min"
+    : `${Math.ceil(etaSec / 60)} min`;
+
+  const distDisplay = arrived ? "0 m"
+    : distKm < 0.1 ? `${Math.round(distKm * 1000)} m`
+    : `${distKm.toFixed(2)} km`;
+
+  const slaDisplay = slaSeconds === null ? "—"
+    : slaSeconds === 0 ? "BREACHED"
+    : `${String(Math.floor(slaSeconds / 60)).padStart(2, "0")}:${String(slaSeconds % 60).padStart(2, "0")}`;
+
+  const slaTone: "success" | "warning" | "destructive" | "muted" =
+    (isBreached || slaSeconds === 0) ? "destructive"
+    : (slaSeconds !== null && slaSeconds < 300) ? "destructive"
+    : (slaSeconds !== null && slaSeconds < 600) ? "warning"
+    : "success";
+
+  const mapLabel = arrived ? "On location"
+    : isBreached ? "SLA exceeded"
+    : isDelayed ? `${etaDisplay} · delayed`
+    : `${etaDisplay} · ${distDisplay}`;
 
   const stages = [
-    { label: "Assigned", time: caseData.createdAt.replace(" AM", "").replace(":38", ":42"), done: true },
-    { label: "Journey Started", time: caseData.createdAt.replace(" AM", "").replace(":38", ":44"), done: true },
-    { label: delayed || breached ? `Delayed — ${caseData.city} traffic` : "Near Customer", time: "10:51", done: true, current: !onsite, alert: delayed || breached },
-    { label: "Arrived", time: onsite ? "10:58 AM" : "—", done: onsite, current: onsite },
-    { label: "Service In Progress", time: "—", done: false },
-    { label: "Completed", time: "—", done: false },
+    { label: "Assigned",             time: "10:42", done: true,   alert: false },
+    { label: "Journey Started",      time: "10:44", done: true,   alert: false },
+    { label: isDelayed || isBreached ? `Delayed — ${caseData.city} traffic` : "En Route", time: "10:51", done: true, alert: isDelayed || isBreached },
+    { label: "Arrived",              time: arrived ? "10:58 AM" : "—", done: arrived, alert: false },
+    { label: "Service In Progress",  time: "—",     done: false,  alert: false },
+    { label: "Completed",            time: "—",     done: false,  alert: false },
   ];
 
   return (
     <>
       <div className="rounded-xl border border-border bg-card shadow-[var(--shadow-card)] overflow-hidden">
-        <MapPanel phase={phase} />
+        <MapPanel
+          driverProgress={driverProgress}
+          isDelayed={isDelayed}
+          isBreached={isBreached}
+          isOnsite={arrived}
+          mapLabel={mapLabel}
+        />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatBox icon={<Navigation className="h-3.5 w-3.5" />} label="ETA" value={onsite ? "Arrived" : breached ? "Delayed" : delayed ? "9 min" : "4 min"} tone={breached ? "destructive" : delayed ? "warning" : "primary"} />
-        <StatBox icon={<MapPin className="h-3.5 w-3.5" />} label="Distance" value={onsite ? "0 m" : "0.6 km"} tone="muted" />
-        <StatBox icon={<Timer className="h-3.5 w-3.5" />} label="SLA Timer" value={breached ? caseData.slaDisplay : delayed ? "29:42" : onsite ? "24:18" : "38:14"} tone={breached ? "destructive" : delayed ? "warning" : "success"} />
-        <StatBox icon={<Car className="h-3.5 w-3.5" />} label="Avg Speed" value={onsite ? "0 km/h" : breached || delayed ? "6 km/h" : "22 km/h"} tone="muted" />
+        <StatBox icon={<Navigation className="h-3.5 w-3.5" />} label="ETA" value={arrived ? "Arrived" : isBreached ? "Delayed" : etaDisplay} tone={isBreached ? "destructive" : isDelayed ? "warning" : "primary"} />
+        <StatBox icon={<MapPin className="h-3.5 w-3.5" />} label="Distance" value={distDisplay} tone="muted" />
+        <StatBox icon={<Timer className="h-3.5 w-3.5" />} label="SLA Timer" value={slaDisplay} tone={slaTone} />
+        <StatBox icon={<Car className="h-3.5 w-3.5" />} label="Avg Speed" value={arrived ? "0 km/h" : `${displaySpeed} km/h`} tone="muted" />
       </div>
 
       <div className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
@@ -929,16 +1310,16 @@ function TrackingTab({ phase, caseData }: { phase: Phase; caseData: CaseData }) 
             <li key={s.label} className="flex items-start gap-3">
               <div className="flex flex-col items-center">
                 {s.done ? (
-                  <CheckCircle2 className={`h-4 w-4 ${s.alert ? (breached ? "text-destructive" : "text-warning") : s.current ? "text-primary" : "text-success"}`} />
+                  <CheckCircle2 className={`h-4 w-4 ${s.alert ? (isBreached ? "text-destructive" : "text-warning") : "text-success"}`} />
                 ) : (
                   <Circle className="h-4 w-4 text-muted-foreground/40" />
                 )}
-                {i < stages.length - 1 && <div className={`w-px h-5 mt-1 ${s.done ? (s.alert ? (breached ? "bg-destructive/40" : "bg-warning/40") : "bg-success/40") : "bg-border"}`} />}
+                {i < stages.length - 1 && (
+                  <div className={`w-px h-5 mt-1 ${s.done ? (s.alert ? (isBreached ? "bg-destructive/40" : "bg-warning/40") : "bg-success/40") : "bg-border"}`} />
+                )}
               </div>
               <div className="flex-1 -mt-0.5 flex items-center justify-between">
-                <span className={`text-sm ${s.current ? "font-semibold text-foreground" : s.done ? "text-foreground" : "text-muted-foreground"}`}>
-                  {s.label}
-                </span>
+                <span className={`text-sm ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.label}</span>
                 <span className="text-xs text-muted-foreground">{s.time}</span>
               </div>
             </li>
@@ -946,14 +1327,13 @@ function TrackingTab({ phase, caseData }: { phase: Phase; caseData: CaseData }) 
         </ol>
       </div>
 
-      {/* Delay alert */}
-      {delayed && (
+      {isDelayed && !arrived && (
         <div className="rounded-xl border border-warning/40 bg-warning-soft p-4 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
           <div className="flex-1">
             <div className="text-sm font-semibold text-warning-foreground">SLA risk · driver delayed</div>
             <p className="text-xs text-warning-foreground/80 mt-0.5">
-              {caseData.techName} stationary for 4 min in {caseData.city} traffic. ETA pushed +5 min — SLA still on track.
+              {caseData.techName} moving slowly in {caseData.city} traffic. ETA {etaDisplay} — SLA at risk.
             </p>
             <div className="flex gap-2 mt-3">
               <button className="text-xs font-medium rounded-md bg-warning text-warning-foreground px-3 py-1.5">Escalate to backup</button>
@@ -963,8 +1343,7 @@ function TrackingTab({ phase, caseData }: { phase: Phase; caseData: CaseData }) 
         </div>
       )}
 
-      {/* Breached alert */}
-      {breached && (
+      {isBreached && (
         <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 flex items-start gap-3">
           <AlertOctagon className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
           <div className="flex-1">
@@ -987,14 +1366,16 @@ function TrackingTab({ phase, caseData }: { phase: Phase; caseData: CaseData }) 
 
 /* ── MAP ── */
 
-function MapPanel({ phase }: { phase: Phase }) {
-  const onsite = phase === "onsite" || phase === "completing";
-  const breached = phase === "breached";
-  const pos =
-    phase === "assigned" ? { x: 250, y: 460 }
-    : phase === "delayed" || breached ? { x: 420, y: 280 }
-    : onsite ? { x: 640, y: 200 }
-    : { x: 540, y: 250 };
+function MapPanel({ driverProgress, isDelayed, isBreached, isOnsite, mapLabel }: {
+  driverProgress: number;
+  isDelayed: boolean;
+  isBreached: boolean;
+  isOnsite: boolean;
+  mapLabel: string;
+}) {
+  const pos = wpPos(driverProgress);
+  const completedPath = wpPath(driverProgress, true);
+  const remainingPath = driverProgress < 1 && !isOnsite ? wpPath(driverProgress, false) : null;
 
   return (
     <div className="relative h-[420px] bg-[oklch(0.97_0.01_240)]">
@@ -1007,35 +1388,57 @@ function MapPanel({ phase }: { phase: Phase }) {
         <rect width="800" height="480" fill="url(#grid2)" />
         <rect x="80" y="300" width="180" height="100" rx="14" fill="oklch(0.94 0.05 155)" />
         <path d="M600 0 L800 0 L800 180 Q700 200 600 160 Z" fill="oklch(0.92 0.05 230)" />
+        {/* Roads */}
         <path d="M0 280 L800 280" stroke="white" strokeWidth="22" />
         <path d="M400 0 L400 480" stroke="white" strokeWidth="22" />
         <path d="M150 0 L150 480" stroke="white" strokeWidth="14" />
         <path d="M650 0 L650 480" stroke="white" strokeWidth="14" />
         <path d="M0 100 L800 100" stroke="white" strokeWidth="14" />
         <path d="M0 430 L800 430" stroke="white" strokeWidth="14" />
-        <path d={`M120 460 Q200 400 200 340 T 360 280 T ${pos.x} ${pos.y}`} stroke="oklch(0.58 0.17 252)" strokeWidth="4" fill="none" strokeLinecap="round" />
-        {!onsite && (
-          <path d={`M${pos.x} ${pos.y} Q ${(pos.x + 640) / 2} ${(pos.y + 200) / 2 - 20} 640 200`} stroke="oklch(0.58 0.17 252)" strokeWidth="4" strokeDasharray="6 6" fill="none" strokeLinecap="round" />
+        {/* Completed route */}
+        <path
+          d={completedPath}
+          stroke="oklch(0.58 0.17 252)"
+          strokeWidth="4" fill="none"
+          strokeLinecap="round" strokeLinejoin="round"
+        />
+        {/* Remaining route (dashed) */}
+        {remainingPath && (
+          <path
+            d={remainingPath}
+            stroke="oklch(0.58 0.17 252)"
+            strokeWidth="4" strokeDasharray="8 6" fill="none"
+            strokeLinecap="round" strokeLinejoin="round"
+          />
         )}
+        {/* Destination (customer) */}
         <g transform="translate(640,200)">
           <circle r="22" fill="oklch(0.58 0.17 252 / 0.18)" />
           <circle r="10" fill="oklch(0.58 0.17 252)" stroke="white" strokeWidth="3" />
         </g>
-        <g transform={`translate(${pos.x},${pos.y})`}>
-          <circle r="20" fill={breached ? "oklch(0.96 0.05 30)" : phase === "delayed" ? "oklch(0.97 0.05 85)" : "white"}
-            stroke={breached ? "oklch(0.63 0.22 25)" : phase === "delayed" ? "oklch(0.78 0.15 75)" : "oklch(0.58 0.17 252)"} strokeWidth="2" />
+        {/* Driver */}
+        <g transform={`translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)})`}>
+          <circle r="20"
+            fill={isBreached ? "oklch(0.96 0.05 30)" : isDelayed ? "oklch(0.97 0.05 85)" : "white"}
+            stroke={isBreached ? "oklch(0.63 0.22 25)" : isDelayed ? "oklch(0.78 0.15 75)" : "oklch(0.58 0.17 252)"}
+            strokeWidth="2"
+          />
           <text x="0" y="6" textAnchor="middle" fontSize="16">🛻</text>
         </g>
+        {/* Origin */}
         <g transform="translate(120,460)">
           <circle r="6" fill="oklch(0.62 0.16 155)" stroke="white" strokeWidth="2" />
         </g>
       </svg>
+
+      {/* ETA overlay */}
       <div className="absolute top-4 left-4 rounded-lg bg-card shadow-[var(--shadow-pop)] border border-border px-3 py-2 text-xs">
-        <div className="text-muted-foreground">{onsite ? "Status" : "ETA"}</div>
-        <div className={`font-semibold text-sm ${breached ? "text-destructive" : ""}`}>
-          {onsite ? "On location" : breached ? "SLA exceeded" : phase === "delayed" ? "9 min · delayed" : "4 min · 0.6 km"}
+        <div className="text-muted-foreground">{isOnsite ? "Status" : "ETA"}</div>
+        <div className={`font-semibold text-sm ${isBreached ? "text-destructive" : isDelayed ? "text-warning-foreground" : ""}`}>
+          {mapLabel}
         </div>
       </div>
+
       <div className="absolute bottom-4 left-4 flex gap-2 flex-wrap">
         <Legend dot="oklch(0.62 0.16 155)" label="Start" />
         <Legend dot="oklch(0.58 0.17 252)" label="Driver" />
