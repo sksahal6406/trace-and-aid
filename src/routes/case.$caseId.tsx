@@ -232,6 +232,23 @@ const caseDataMap: Record<string, CaseData> = {
     completionService: "Emergency locksmith — vehicle opened",
     completionNote: "Vehicle unlocked on first attempt. Customer verified key works. Case closed within SLA.",
   },
+  "SR-2026-08402": {
+    customer: "Arjun Nair", phone: "+91 94443 67812", membership: "Silver",
+    vehicle: "Maruti Suzuki Dzire 2019", vehicleReg: "TN 07 BK 6634", pastCases: "0 in last 12 months",
+    issue: "Flat tyre repair escalated to tow — wheel hub damaged",
+    issueDetail: "Called for flat tyre on rear-left wheel. Technician arrived and found the wheel hub cracked and brake drum deformed — likely from a deep pothole impact. Roadside repair not feasible. Flatbed tow dispatched to nearest Maruti workshop.",
+    location: "Anna Nagar, 2nd Avenue, near Water Tank, Chennai 600040",
+    city: "Chennai", channel: "App", createdAt: "10:07 AM",
+    triage: "Towing Required · Flatbed (Escalated)",
+    triageDetail: "Originally: Flat Tyre. On-site assessment revealed cracked wheel hub & damaged brake drum — repair not possible roadside. Escalated to flatbed tow. Drop: Maruti Suzuki Service, Koyambedu.",
+    confidence: 87,
+    techName: "Dinesh Babu", techVendor: "Chennai Road Rescue", techVendorType: "COCO",
+    techVehicle: "TN-09-CR-4481", techEtaMin: 0,
+    initialPhase: "onsite", initialTab: "tracking",
+    slaTarget: 60, slaDisplay: "14:30",
+    completionService: "Flatbed towing — escalated from flat tyre",
+    completionNote: "Technician attempted tyre swap but found cracked wheel hub. Flatbed dispatched and now on-site. Vehicle being loaded for transport to Maruti Service, Koyambedu. Exception logged — service type changed mid-case.",
+  },
 };
 
 type BidStatus = "idle" | "notified" | "viewing" | "accepted";
@@ -679,36 +696,37 @@ function WrapUpPanel({ caseData, onClose }: { caseData: CaseData; onClose: () =>
     "Vehicle condition documented",
   ];
   return (
-    <div className="rounded-xl border border-success/40 bg-success-soft p-6">
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-6">
       <div className="flex items-center gap-2 mb-4">
-        <CheckCircle2 className="h-5 w-5 text-success" />
-        <h3 className="text-sm font-semibold text-success">Service Done — Wrap Up to Close Case</h3>
+        <AlertTriangle className="h-5 w-5 text-amber-600" />
+        <h3 className="text-sm font-semibold text-amber-700">Service Done — Wrap Up to Close Case</h3>
       </div>
       <div className="mb-4">
-        <div className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">Service performed</div>
+        <div className="text-xs text-amber-600/80 mb-2 font-medium uppercase tracking-wide">Service performed</div>
         <div className="text-sm font-medium">{caseData.completionService}</div>
       </div>
       <div className="mb-4 space-y-2">
-        <div className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">Checklist</div>
+        <div className="text-xs text-amber-600/80 mb-2 font-medium uppercase tracking-wide">Checklist</div>
         {checklist.map((item) => (
           <div key={item} className="flex items-center gap-2 text-sm">
-            <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+            <CheckCircle2 className="h-4 w-4 text-amber-600 shrink-0" />
             {item}
           </div>
         ))}
       </div>
       <div className="mb-4">
-        <div className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">Technician notes</div>
+        <div className="text-xs text-amber-600/80 mb-2 font-medium uppercase tracking-wide">Technician notes</div>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring/30"
+          rows={4}
+          className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/40 placeholder:text-muted-foreground shadow-sm"
+          placeholder="Add technician notes before closing…"
         />
       </div>
       <button
         onClick={onClose}
-        className="w-full rounded-lg bg-success text-white text-sm font-medium py-2.5 flex items-center justify-center gap-2 hover:opacity-90"
+        className="w-full rounded-lg bg-amber-500 text-white text-sm font-medium py-2.5 flex items-center justify-center gap-2 hover:bg-amber-600 transition-colors"
       >
         <CheckCircle2 className="h-4 w-4" /> Close Case
       </button>

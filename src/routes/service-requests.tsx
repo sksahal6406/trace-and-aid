@@ -205,6 +205,22 @@ const allSRs: SR[] = [
     age: "22 min",
     queue: "exceptions",
   },
+  {
+    id: "SR-2026-08402",
+    customer: "Arjun Nair",
+    membership: "Silver",
+    vehicle: "Maruti Dzire · TN 07 BK 6634",
+    issue: "Flat tyre repair escalated to tow — wheel hub damaged",
+    triage: "Towing Required",
+    confidence: 87,
+    location: "Anna Nagar, 2nd Ave",
+    city: "Chennai",
+    status: "On-site · Escalated to Tow",
+    slaMin: 14.5,
+    channel: "App",
+    age: "31 min",
+    queue: "exceptions",
+  },
 ];
 
 type QueueConfig = {
