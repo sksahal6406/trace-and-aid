@@ -1,7 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppLayout, PageHeader } from "@/components/AppLayout";
-import { useState } from "react";
-import { LiveMapPanel } from "@/components/LiveMapPanel";
+import React, { useState, lazy, Suspense } from "react";
+
+// Leaflet accesses `window` at module init and crashes in Node/SSR.
+// The typeof window guard ensures the real import never runs on the server.
+const LiveMapPanel = lazy(async () => {
+  if (typeof window === "undefined") return { default: () => null as unknown as React.ReactElement };
+  const m = await import("@/components/LiveMapPanel");
+  return { default: m.LiveMapPanel };
+});
 import {
   Activity,
   Users,
@@ -206,7 +213,9 @@ function Dashboard() {
           </div>
 
           {/* Live field map */}
-          <LiveMapPanel />
+          <Suspense fallback={<div className="h-[420px] rounded-xl bg-muted animate-pulse" />}>
+            <LiveMapPanel />
+          </Suspense>
         </div>
 
         {/* Role-specific bottom panel */}
