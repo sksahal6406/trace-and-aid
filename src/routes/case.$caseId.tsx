@@ -342,6 +342,8 @@ function CaseDetail() {
 
   const [phase, setPhase] = useState<Phase>(caseData.initialPhase);
   const [tab, setTab] = useState<Tab>(caseData.initialTab);
+  const [cancelledTech, setCancelledTech] = useState<{ id: string; name: string; cancelPhase: Phase; reason: "cancelled" | "escalated" } | null>(null);
+  const [driverArrived, setDriverArrived] = useState(false);
 
   // Live SLA countdown
   const [slaSeconds, setSlaSeconds] = useState<number | null>(() => parseSlaSeconds(caseData.slaDisplay));
@@ -418,7 +420,7 @@ function CaseDetail() {
                 </div>
               </div>
               {!isCompleted && (
-                <DemoStepper phase={phase} setPhase={setPhase} setTab={setTab} />
+                <DemoStepper phase={phase} setPhase={setPhase} setTab={setTab} driverArrived={driverArrived} />
               )}
               {isCompleted && (
                 <button
@@ -431,7 +433,7 @@ function CaseDetail() {
             </div>
           </div>
 
-          <JourneyBar phase={phase} />
+          <JourneyBar phase={phase} caseData={caseData} driverArrived={driverArrived} />
 
           {/* Tabs */}
           {!isCompleted && (
@@ -466,11 +468,27 @@ function CaseDetail() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               {tab === "overview" && <OverviewTab phase={phase} caseData={caseData} setPhase={setPhase} />}
-              {tab === "assignment" && <AssignmentTab phase={phase} caseData={caseData} onAssign={() => setPhase("assigned")} />}
-              {tab === "tracking" && <TrackingTab phase={phase} caseData={caseData} slaSeconds={slaSeconds} />}
+              {tab === "assignment" && (
+                <AssignmentTab
+                  phase={phase}
+                  caseData={caseData}
+                  onAssign={() => setPhase("assigned")}
+                  onDriverCancel={(tech) => { setCancelledTech(tech); setDriverArrived(false); setPhase("assigning"); setTab("assignment"); }}
+                  cancelledTech={cancelledTech}
+                />
+              )}
+              {tab === "tracking" && (
+                <TrackingTab
+                  phase={phase}
+                  caseData={caseData}
+                  slaSeconds={slaSeconds}
+                  onDriverCancel={(tech) => { setCancelledTech(tech); setDriverArrived(false); setPhase("assigning"); setTab("assignment"); }}
+                  onArrived={() => setDriverArrived(true)}
+                />
+              )}
               {tab === "communication" && <CommunicationTab phase={phase} caseData={caseData} />}
             </div>
-            <ActivityTimeline phase={phase} caseData={caseData} />
+            <ActivityTimeline phase={phase} caseData={caseData} cancelledTech={cancelledTech} />
           </div>
         )}
       </div>
@@ -511,16 +529,20 @@ function isTabEnabled(tab: Tab, phase: Phase) {
   return true;
 }
 
-function DemoStepper({ phase, setPhase, setTab }: {
+function DemoStepper({ phase, setPhase, setTab, driverArrived }: {
   phase: Phase;
   setPhase: (p: Phase) => void;
   setTab: (t: Tab) => void;
+  driverArrived?: boolean;
 }) {
   const next = () => {
     if (phase === "triage") { setPhase("assigning"); setTab("assignment"); }
     else if (phase === "assigning") { setPhase("assigned"); setTab("assignment"); }
     else if (phase === "assigned") { setPhase("tracking"); setTab("tracking"); }
-    else if (phase === "tracking" || phase === "delayed") { setPhase("onsite"); setTab("tracking"); }
+    else if (phase === "tracking" || phase === "delayed") {
+      if (driverArrived) { setPhase("completing"); setTab("overview"); }
+      else { setPhase("onsite"); setTab("tracking"); }
+    }
     else if (phase === "onsite") { setPhase("completing"); setTab("overview"); }
     else if (phase === "completing") { setPhase("completed"); }
     else if (phase === "breached") { setPhase("assigning"); setTab("assignment"); }
@@ -530,6 +552,7 @@ function DemoStepper({ phase, setPhase, setTab }: {
     phase === "triage" ? "Assign Technician"
     : phase === "assigning" ? "Tech Accepted"
     : phase === "assigned" ? "Start Tracking"
+    : (phase === "tracking" || phase === "delayed") && driverArrived ? "Complete Service"
     : phase === "tracking" || phase === "delayed" ? "Mark On-site"
     : phase === "onsite" ? "Complete Service"
     : phase === "completing" ? "Close Case"
@@ -553,7 +576,11 @@ function DemoStepper({ phase, setPhase, setTab }: {
   );
 }
 
-function JourneyBar({ phase }: { phase: Phase }) {
+function JourneyBar({ phase, caseData, driverArrived }: {
+  phase: Phase;
+  caseData: CaseData;
+  driverArrived: boolean;
+}) {
   const steps = [
     { key: "triage", label: "Triaged" },
     { key: "assigning", label: "Assigning" },
@@ -574,15 +601,28 @@ function JourneyBar({ phase }: { phase: Phase }) {
   };
 
   const currentIdx = phaseToStepIdx(phase);
+  const isEnRoute = phase === "tracking" || phase === "delayed";
+  const isDelayed = phase === "delayed";
+
+  // Sub-milestones shown between "En Route" and "On-site" nodes while tracking
+  const subSteps = [
+    { label: "Started",  done: true,          alert: false },
+    ...(isDelayed ? [{ label: "Delayed", done: true, alert: true }] : []),
+    { label: "Arrived",  done: driverArrived, alert: false },
+  ];
 
   return (
-    <div className="mt-6 flex items-center">
+    <div className="mt-6 flex items-start">
       {steps.map((s, i) => {
         const done = i < currentIdx;
         const current = i === currentIdx;
         const isBreachedStep = phase === "breached" && i === 3;
+        // The connector rendered after node i sits between node i and node i+1.
+        // Index 3 = connector between "En Route" (node 4) and "On-site" (node 5).
+        const isExpandableConnector = i === 3;
+
         return (
-          <div key={s.key} className="flex items-center flex-1 last:flex-none">
+          <div key={s.key} className="flex items-start flex-1 last:flex-none">
             <div className="flex flex-col items-center">
               <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold ${
                 isBreachedStep ? "bg-destructive text-white ring-4 ring-destructive/15"
@@ -592,12 +632,48 @@ function JourneyBar({ phase }: { phase: Phase }) {
               }`}>
                 {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
               </div>
-              <span className={`mt-1.5 text-[11px] ${current || isBreachedStep ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+              <span className={`mt-1.5 text-[11px] text-center ${current || isBreachedStep ? "font-medium text-foreground" : "text-muted-foreground"}`}>
                 {s.label}
               </span>
             </div>
+
             {i < steps.length - 1 && (
-              <div className={`flex-1 h-px mx-2 mb-5 ${i < currentIdx ? "bg-success" : "bg-border"}`} />
+              isExpandableConnector ? (
+                /* Expandable connector: collapses when not en-route, expands to show sub-steps */
+                <div className="flex-1 flex flex-col min-w-0 pt-3.5">
+                  {/* Horizontal track with sub-steps inside */}
+                  <div className="flex items-center w-full">
+                    {/* Left stub */}
+                    <div className={`h-px shrink-0 w-2 ${done ? "bg-success" : "bg-border"}`} />
+                    {/* Animated sub-step container */}
+                    <div
+                      className="flex items-center overflow-hidden transition-all duration-500 ease-in-out"
+                      style={{ maxWidth: isEnRoute ? "500px" : "0px", opacity: isEnRoute ? 1 : 0 }}
+                    >
+                      {subSteps.map((sub, si) => (
+                        <div key={sub.label} className="flex items-center shrink-0">
+                          {/* connector segment before each dot */}
+                          <div className={`h-px w-4 ${sub.done || (si > 0 && subSteps[si - 1].done) ? "bg-success" : "bg-border"}`} />
+                          <div className="flex flex-col items-center">
+                            <div className={`h-2.5 w-2.5 rounded-full border-2 border-card ${
+                              sub.done ? (sub.alert ? "bg-warning" : "bg-success") : "bg-border"
+                            }`} />
+                            <span className={`mt-1 text-[9px] whitespace-nowrap leading-none ${
+                              sub.alert ? "text-warning-foreground font-medium" : "text-muted-foreground"
+                            }`}>{sub.label}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {/* trailing connector segment after last dot */}
+                      <div className={`h-px w-4 ${driverArrived ? "bg-success" : "bg-border"}`} />
+                    </div>
+                    {/* Right flex line fills remaining space */}
+                    <div className={`h-px flex-1 ${done ? "bg-success" : "bg-border"}`} />
+                  </div>
+                </div>
+              ) : (
+                <div className={`flex-1 h-px mx-2 mt-3.5 ${i < currentIdx ? "bg-success" : "bg-border"}`} />
+              )
             )}
           </div>
         );
@@ -853,7 +929,15 @@ function CompletedView({ caseId, caseData }: { caseId: string; caseData: CaseDat
 
 /* ── ASSIGNMENT ── */
 
-function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: CaseData; onAssign: () => void }) {
+function AssignmentTab({
+  phase, caseData, onAssign, onDriverCancel, cancelledTech,
+}: {
+  phase: Phase;
+  caseData: CaseData;
+  onAssign: () => void;
+  onDriverCancel: (tech: { id: string; name: string; cancelPhase: Phase; reason: "cancelled" | "escalated" }) => void;
+  cancelledTech: { id: string; name: string; cancelPhase: Phase; reason: "cancelled" | "escalated" } | null;
+}) {
   const isAlreadyAssigned = phase === "assigned" || phase === "tracking" || phase === "delayed" || phase === "onsite" || phase === "completing" || phase === "breached";
 
   const [assignMode, setAssignMode] = useState<"auto" | "manual">("auto");
@@ -866,9 +950,10 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
   const [localAssignedId, setLocalAssignedId] = useState<string | null>(null);
   const bidTimeouts = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const filteredTechs = technicians.filter((t) =>
-    vendorFilter === "all" ? true : t.vendorType === vendorFilter
-  );
+  const isEscalation = cancelledTech?.reason === "escalated";
+  const filteredTechs = technicians
+    .filter((t) => vendorFilter === "all" ? true : t.vendorType === vendorFilter)
+    .sort((a, b) => isEscalation ? a.etaMin - b.etaMin : 0);
 
   const acceptedTechs = technicians.filter((t) => bidStatuses[t.id] === "accepted");
   const finalAssignedId = isAlreadyAssigned ? technicians.find((t) => t.recommended)?.id ?? null : localAssignedId;
@@ -921,6 +1006,13 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
     onAssign();
   }
 
+  function handleDriverCancel() {
+    const assignedId = localAssignedId ?? technicians.find((t) => t.recommended)?.id ?? "";
+    const assignedName = technicians.find((t) => t.id === assignedId)?.name ?? caseData.techName;
+    resetBid();
+    onDriverCancel({ id: assignedId, name: assignedName, cancelPhase: phase, reason: "cancelled" });
+  }
+
   const timerColor = timerSeconds > 20 ? "bg-primary" : timerSeconds > 10 ? "bg-amber-500" : "bg-destructive";
   const progress = ((BID_TIMER_DURATION - timerSeconds) / BID_TIMER_DURATION) * 100;
   const mm = String(Math.floor(timerSeconds / 60)).padStart(2, "0");
@@ -928,6 +1020,31 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
 
   return (
     <>
+      {/* Reassignment banner — different tone for escalation vs cancellation */}
+      {cancelledTech && !isAlreadyAssigned && (
+        cancelledTech.reason === "escalated" ? (
+          <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+            <div>
+              <div className="text-sm font-semibold text-warning-foreground">SLA Risk — Reassign to Prevent Breach</div>
+              <p className="text-xs text-warning-foreground/70 mt-0.5">
+                {cancelledTech.name} is delayed and may breach SLA. Select a faster nearby technician — technicians are sorted by ETA.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div>
+              <div className="text-sm font-semibold text-destructive">Driver Cancelled — Reassignment Required</div>
+              <p className="text-xs text-destructive/70 mt-0.5">
+                {cancelledTech.name} cancelled the job. Assign a new technician to continue.
+              </p>
+            </div>
+          </div>
+        )
+      )}
+
       {/* Already assigned banner */}
       {isAlreadyAssigned && (
         <div className="rounded-xl border border-success/30 bg-success-soft p-5 flex items-center gap-3">
@@ -941,6 +1058,14 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
               }`}>{caseData.techVendorType}</span>
             </div>
           </div>
+          {phase === "assigned" && (
+            <button
+              onClick={handleDriverCancel}
+              className="shrink-0 text-xs font-medium text-destructive border border-destructive/30 rounded-md px-3 py-1.5 hover:bg-destructive/10 transition-colors"
+            >
+              Simulate Driver Cancel
+            </button>
+          )}
         </div>
       )}
 
@@ -1007,31 +1132,6 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
                   </button>
                 )}
               </div>
-
-              {/* Live bid status */}
-              {(timerRunning || timerExpired) && (
-                <div className="space-y-2">
-                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Live Bids</p>
-                  {NOTIFIED_IDS.map((id) => {
-                    const tech = technicians.find((t) => t.id === id)!;
-                    const status = bidStatuses[id] ?? "notified";
-                    return (
-                      <div key={id} className={`flex items-center gap-3 rounded-lg border p-2.5 ${status === "accepted" ? "border-success/40 bg-success/10" : "border-border bg-card"}`}>
-                        <BidIcon status={status} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium">{tech.name}</p>
-                          <p className="text-[10px] text-muted-foreground">{bidStatusLabel(status)} · {tech.etaMin} min ETA</p>
-                        </div>
-                        {status === "accepted" && (
-                          <button onClick={() => acceptBid(id)} className="text-[11px] font-semibold bg-success text-white rounded-md px-2.5 py-1 hover:opacity-90 shrink-0">
-                            Accept
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
 
               {timerExpired && acceptedTechs[0] && !localAssignedId && (
                 <button onClick={() => acceptBid(acceptedTechs[0].id)} className="w-full rounded-lg bg-success text-white text-sm font-medium py-2 flex items-center justify-center gap-2 hover:opacity-90">
@@ -1105,7 +1205,7 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
         <div className="divide-y divide-border">
           {filteredTechs.length === 0 ? (
             <p className="px-5 py-8 text-sm text-muted-foreground text-center">No technicians match the filter.</p>
-          ) : filteredTechs.map((t) => {
+          ) : (finalAssignedId ? filteredTechs.filter((t) => t.id === finalAssignedId) : filteredTechs).map((t) => {
             const borderColor =
               finalAssignedId === t.id ? "border-l-success"
               : selectedId === t.id ? "border-l-primary"
@@ -1121,6 +1221,9 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
             const isDisabled = t.availColor === "grey" || t.availColor === "red";
             const bidStatus = bidStatuses[t.id] ?? "idle";
             const isAssigned = finalAssignedId === t.id;
+            const isCancelledTech = cancelledTech?.id === t.id && !isAssigned;
+            const isFastestAvailable = isEscalation && !isCancelledTech && !isDisabled
+              && filteredTechs.find((ft) => !ft.availColor.match(/grey|red/))?.id === t.id;
 
             return (
               <div
@@ -1128,6 +1231,7 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
                 onClick={() => { if (!isDisabled && !isAlreadyAssigned && assignMode === "manual") setSelectedId(t.id); }}
                 className={`flex items-center gap-3 px-5 py-3.5 border-l-2 ${borderColor} transition-colors ${
                   isAssigned ? "bg-success/10"
+                  : isCancelledTech ? "bg-destructive/5"
                   : selectedId === t.id ? "bg-primary-soft/50"
                   : t.recommended && !isAlreadyAssigned ? "bg-primary-soft/30"
                   : ""
@@ -1149,6 +1253,14 @@ function AssignmentTab({ phase, caseData, onAssign }: { phase: Phase; caseData: 
                     )}
                     {isAssigned && (
                       <span className="text-[10px] font-medium bg-success text-white rounded px-1.5 py-0.5">Assigned</span>
+                    )}
+                    {isCancelledTech && (
+                      <span className="text-[10px] font-medium bg-destructive/10 text-destructive rounded px-1.5 py-0.5">
+                        {cancelledTech?.reason === "escalated" ? "Stood Down" : "Cancelled"}
+                      </span>
+                    )}
+                    {isFastestAvailable && (
+                      <span className="text-[10px] font-medium bg-warning text-warning-foreground rounded px-1.5 py-0.5">Fastest nearby</span>
                     )}
                     {bidStatus === "accepted" && !isAssigned && (
                       <span className="text-[10px] font-medium bg-success/20 text-success rounded px-1.5 py-0.5">Bid Accepted</span>
@@ -1221,14 +1333,26 @@ function bidStatusLabel(status: BidStatus) {
 
 /* ── TRACKING ── */
 
-function TrackingTab({ phase, caseData, slaSeconds }: {
+function TrackingTab({ phase, caseData, slaSeconds, onDriverCancel, onArrived }: {
   phase: Phase;
   caseData: CaseData;
   slaSeconds: number | null;
+  onDriverCancel?: (tech: { id: string; name: string; cancelPhase: Phase; reason: "cancelled" | "escalated" }) => void;
+  onArrived?: () => void;
 }) {
   const isOnsite = phase === "onsite" || phase === "completing";
   const isDelayed = phase === "delayed";
   const isBreached = phase === "breached";
+
+  function handleMidJourneyCancel() {
+    const techObj = technicians.find((t) => t.name === caseData.techName) ?? technicians[0];
+    onDriverCancel?.({ id: techObj.id, name: caseData.techName, cancelPhase: phase, reason: "cancelled" });
+  }
+
+  function handleEscalate() {
+    const techObj = technicians.find((t) => t.name === caseData.techName) ?? technicians[0];
+    onDriverCancel?.({ id: techObj.id, name: caseData.techName, cancelPhase: phase, reason: "escalated" });
+  }
 
   const speedKmhBase = isOnsite ? 0 : isBreached ? 3 : isDelayed ? 6 : 22;
 
@@ -1270,6 +1394,14 @@ function TrackingTab({ phase, caseData, slaSeconds }: {
 
   const arrived = driverProgress >= 1 || isOnsite;
 
+  const arrivedRef = useRef(false);
+  useEffect(() => {
+    if (arrived && !arrivedRef.current) {
+      arrivedRef.current = true;
+      onArrived?.();
+    }
+  }, [arrived, onArrived]);
+
   const etaDisplay = arrived ? "Arrived"
     : etaSec < 60 ? "<1 min"
     : `${Math.ceil(etaSec / 60)} min`;
@@ -1293,15 +1425,6 @@ function TrackingTab({ phase, caseData, slaSeconds }: {
     : isDelayed ? `${etaDisplay} · delayed`
     : `${etaDisplay} · ${distDisplay}`;
 
-  const stages = [
-    { label: "Assigned",             time: "10:42", done: true,   alert: false },
-    { label: "Journey Started",      time: "10:44", done: true,   alert: false },
-    { label: isDelayed || isBreached ? `Delayed — ${caseData.city} traffic` : "En Route", time: "10:51", done: true, alert: isDelayed || isBreached },
-    { label: "Arrived",              time: arrived ? "10:58 AM" : "—", done: arrived, alert: false },
-    { label: "Service In Progress",  time: "—",     done: false,  alert: false },
-    { label: "Completed",            time: "—",     done: false,  alert: false },
-  ];
-
   return (
     <>
       <div className="rounded-xl border border-border bg-card shadow-[var(--shadow-card)] overflow-hidden">
@@ -1321,29 +1444,24 @@ function TrackingTab({ phase, caseData, slaSeconds }: {
         <StatBox icon={<Car className="h-3.5 w-3.5" />} label="Avg Speed" value={arrived ? "0 km/h" : `${displaySpeed} km/h`} tone="muted" />
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
-        <h3 className="text-sm font-semibold mb-4">Journey status</h3>
-        <ol className="space-y-3">
-          {stages.map((s, i) => (
-            <li key={s.label} className="flex items-start gap-3">
-              <div className="flex flex-col items-center">
-                {s.done ? (
-                  <CheckCircle2 className={`h-4 w-4 ${s.alert ? (isBreached ? "text-destructive" : "text-warning") : "text-success"}`} />
-                ) : (
-                  <Circle className="h-4 w-4 text-muted-foreground/40" />
-                )}
-                {i < stages.length - 1 && (
-                  <div className={`w-px h-5 mt-1 ${s.done ? (s.alert ? (isBreached ? "bg-destructive/40" : "bg-warning/40") : "bg-success/40") : "bg-border"}`} />
-                )}
-              </div>
-              <div className="flex-1 -mt-0.5 flex items-center justify-between">
-                <span className={`text-sm ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.label}</span>
-                <span className="text-xs text-muted-foreground">{s.time}</span>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </div>
+      {/* Mid-journey driver cancel trigger — visible while en route */}
+      {(phase === "tracking" || phase === "delayed") && !arrived && onDriverCancel && (
+        <div className="rounded-xl border border-destructive/20 bg-card p-4 flex items-center gap-3">
+          <AlertOctagon className="h-4 w-4 text-destructive shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-destructive">Driver Incident Simulation</div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {caseData.techName} is currently en route. Simulate a mid-journey cancellation to trigger reassignment.
+            </p>
+          </div>
+          <button
+            onClick={handleMidJourneyCancel}
+            className="shrink-0 text-xs font-medium text-destructive border border-destructive/30 rounded-md px-3 py-1.5 hover:bg-destructive/10 transition-colors"
+          >
+            Simulate Driver Cancel
+          </button>
+        </div>
+      )}
 
       {isDelayed && !arrived && (
         <div className="rounded-xl border border-warning/40 bg-warning-soft p-4 flex items-start gap-3">
@@ -1354,7 +1472,12 @@ function TrackingTab({ phase, caseData, slaSeconds }: {
               {caseData.techName} moving slowly in {caseData.city} traffic. ETA {etaDisplay} — SLA at risk.
             </p>
             <div className="flex gap-2 mt-3">
-              <button className="text-xs font-medium rounded-md bg-warning text-warning-foreground px-3 py-1.5">Escalate to backup</button>
+              <button
+                onClick={handleEscalate}
+                className="text-xs font-medium rounded-md bg-warning text-warning-foreground px-3 py-1.5 hover:opacity-90"
+              >
+                Reassign to Nearby Technician
+              </button>
               <button className="text-xs font-medium rounded-md border border-warning/40 bg-card px-3 py-1.5">Notify customer</button>
             </div>
           </div>
@@ -1372,7 +1495,12 @@ function TrackingTab({ phase, caseData, slaSeconds }: {
             </p>
             <div className="flex gap-2 mt-3">
               <button className="text-xs font-medium rounded-md bg-destructive text-white px-3 py-1.5">Escalate to TL</button>
-              <button className="text-xs font-medium rounded-md border border-destructive/40 bg-card px-3 py-1.5 text-destructive">Reassign Tech</button>
+              <button
+                onClick={handleEscalate}
+                className="text-xs font-medium rounded-md border border-destructive/40 bg-card px-3 py-1.5 text-destructive hover:bg-destructive/5"
+              >
+                Reassign Tech
+              </button>
               <button className="text-xs font-medium rounded-md border border-border bg-card px-3 py-1.5 text-muted-foreground">Notify Customer</button>
             </div>
           </div>
@@ -1611,7 +1739,11 @@ function Bubble({ m }: { m: Msg }) {
 
 /* ── ACTIVITY TIMELINE ── */
 
-function ActivityTimeline({ phase, caseData }: { phase: Phase; caseData: CaseData }) {
+function ActivityTimeline({ phase, caseData, cancelledTech }: {
+  phase: Phase;
+  caseData: CaseData;
+  cancelledTech?: { id: string; name: string; cancelPhase: Phase; reason: "cancelled" | "escalated" } | null;
+}) {
   const events: { time: string; label: string; tone: "primary" | "success" | "warning" | "destructive" }[] = [
     { time: caseData.createdAt.replace(" AM", ""), label: `${caseData.channel} request from ${caseData.customer}`, tone: "primary" },
     { time: "+1 min", label: "Location & vehicle verified", tone: "primary" },
@@ -1622,10 +1754,34 @@ function ActivityTimeline({ phase, caseData }: { phase: Phase; caseData: CaseDat
   if (phase !== "triage") {
     events.push({ time: "+3 min", label: "Auto-bid broadcast to vendors", tone: "primary" });
   }
-  if (["assigned", "tracking", "delayed", "onsite", "completing", "breached"].includes(phase)) {
+  const isMidJourney = cancelledTech?.cancelPhase === "tracking" || cancelledTech?.cancelPhase === "delayed";
+  const isEscalation = cancelledTech?.reason === "escalated";
+  if (cancelledTech) {
+    events.push({ time: "+4 min", label: `${cancelledTech.name} accepted job`, tone: "success" });
+    if (isMidJourney) {
+      events.push({ time: "+6 min", label: "Driver journey started", tone: "primary" });
+      if (isEscalation) {
+        events.push({ time: "+12 min", label: "SLA breach risk — dispatcher initiated reassignment", tone: "warning" });
+        events.push({ time: "+13 min", label: `${cancelledTech.name} stood down — backup dispatched`, tone: "warning" });
+      } else {
+        events.push({ time: "+12 min", label: `${cancelledTech.name} cancelled mid-journey`, tone: "destructive" });
+        events.push({ time: "+13 min", label: "Journey aborted — customer notified", tone: "destructive" });
+      }
+    } else {
+      if (isEscalation) {
+        events.push({ time: "+7 min", label: "SLA breach risk — proactive reassignment triggered", tone: "warning" });
+      } else {
+        events.push({ time: "+7 min", label: `${cancelledTech.name} cancelled assignment`, tone: "destructive" });
+      }
+    }
+    events.push({ time: isMidJourney ? "+14 min" : "+8 min", label: isEscalation ? "Re-broadcasting — backup technician needed" : "Re-broadcasting — reassignment in progress", tone: "warning" });
+    if (["assigned", "tracking", "delayed", "onsite", "completing", "breached"].includes(phase)) {
+      events.push({ time: isMidJourney ? "+16 min" : "+10 min", label: "New technician accepted — reassigned", tone: "success" });
+    }
+  } else if (["assigned", "tracking", "delayed", "onsite", "completing", "breached"].includes(phase)) {
     events.push({ time: "+4 min", label: `${caseData.techName} accepted job`, tone: "success" });
   }
-  if (["tracking", "delayed", "onsite", "completing", "breached"].includes(phase)) {
+  if (!cancelledTech && ["tracking", "delayed", "onsite", "completing", "breached"].includes(phase)) {
     events.push({ time: "+6 min", label: "Driver journey started", tone: "primary" });
   }
   if (phase === "delayed") {
