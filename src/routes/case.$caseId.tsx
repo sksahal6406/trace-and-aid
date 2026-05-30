@@ -416,7 +416,7 @@ function CaseDetail() {
                   : phase === "delayed" ? "text-warning-foreground"
                   : "text-success"
                 }`}>
-                  {phase === caseData.initialPhase ? liveSlaDisplay : phaseMeta.slaTimer}
+                  {liveSlaDisplay}
                 </div>
               </div>
               {!isCompleted && (
