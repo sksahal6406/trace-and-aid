@@ -348,12 +348,13 @@ function CaseDetail() {
   // Live SLA countdown
   const [slaSeconds, setSlaSeconds] = useState<number | null>(() => parseSlaSeconds(caseData.slaDisplay));
   useEffect(() => {
-    if (slaSeconds === null || slaSeconds <= 0) return;
+    if (slaSeconds === null || slaSeconds <= 0 || phase === "completed" || phase === "completing") return;
     const id = setInterval(() => setSlaSeconds((s) => (s !== null ? Math.max(0, s - 1) : null)), 1000);
     return () => clearInterval(id);
-  }, [slaSeconds]);
+  }, [slaSeconds, phase]);
   const liveSlaDisplay =
-    slaSeconds === null ? caseData.slaDisplay
+    phase === "completed" ? "—"
+    : slaSeconds === null ? caseData.slaDisplay
     : slaSeconds === 0 ? "BREACHED"
     : `${String(Math.floor(slaSeconds / 60)).padStart(2, "0")}:${String(slaSeconds % 60).padStart(2, "0")}`;
 
