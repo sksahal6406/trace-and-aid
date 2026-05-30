@@ -39,7 +39,8 @@ type QueueKey =
   | "stopped"
   | "approaching_sla"
   | "breached"
-  | "exceptions";
+  | "exceptions"
+  | "resolved";
 
 type SR = {
   id: string;
@@ -221,6 +222,22 @@ const allSRs: SR[] = [
     age: "31 min",
     queue: "exceptions",
   },
+  {
+    id: "SR-2026-08404",
+    customer: "Meera Joshi",
+    membership: "Silver",
+    vehicle: "Honda City · TS 07 GH 2210",
+    issue: "Locked out of vehicle",
+    triage: "Locksmith Required",
+    confidence: 84,
+    location: "Banjara Hills Road No 12",
+    city: "Hyderabad",
+    status: "Resolved",
+    slaMin: 999,
+    channel: "App",
+    age: "58 min",
+    queue: "resolved",
+  },
 ];
 
 type QueueConfig = {
@@ -240,10 +257,11 @@ const queueConfig: QueueConfig[] = [
   { key: "approaching_sla", label: "Approaching SLA", icon: Timer, urgency: "amber", description: "Under 10 min to deadline" },
   { key: "breached", label: "SLA Breached", icon: AlertOctagon, urgency: "red", description: "Escalation required" },
   { key: "exceptions", label: "Exceptions", icon: AlertTriangle, urgency: "orange", description: "Manual review required" },
+  { key: "resolved", label: "Resolved", icon: CheckCircle2, urgency: "normal", description: "Closed within SLA" },
 ];
 
 function getCount(key: QueueKey): number {
-  if (key === "all") return allSRs.length;
+  if (key === "all") return allSRs.filter((sr) => sr.queue !== "resolved").length;
   return allSRs.filter((sr) => sr.queue === key).length;
 }
 
@@ -255,6 +273,16 @@ function formatSla(slaMin: number): string {
 }
 
 function SlaCell({ slaMin }: { slaMin: number }) {
+  if (slaMin === 999) {
+    return (
+      <div className="text-right">
+        <span className="inline-block font-mono text-[11px] font-semibold bg-success/15 text-success rounded px-1.5 py-0.5">
+          Resolved
+        </span>
+        <div className="text-[10px] text-success/70 mt-0.5">within SLA</div>
+      </div>
+    );
+  }
   if (slaMin < 0) {
     const mins = Math.abs(Math.ceil(slaMin));
     return (
@@ -366,7 +394,9 @@ function ServiceRequests() {
   }, []);
 
   const visibleRows =
-    selectedQueue === "all" ? allSRs : allSRs.filter((r) => r.queue === selectedQueue);
+    selectedQueue === "all"
+      ? allSRs
+      : allSRs.filter((r) => r.queue === selectedQueue);
 
   const selectedConfig = queueConfig.find((q) => q.key === selectedQueue)!;
 
@@ -392,7 +422,7 @@ function ServiceRequests() {
                   SLA Queues
                 </p>
                 <span className="text-[10px] text-muted-foreground font-mono">
-                  {allSRs.length} open
+                  {allSRs.filter((r) => r.queue !== "resolved").length} open
                 </span>
               </div>
               <div className="p-2 space-y-0.5">
@@ -453,13 +483,16 @@ function ServiceRequests() {
                 {visibleRows.map((r) => {
                   const isBreached = r.queue === "breached";
                   const isUrgent = r.queue === "approaching_sla" || r.queue === "stopped";
+                  const isResolved = r.queue === "resolved";
                   return (
                     <Link
                       key={r.id}
                       to="/case/$caseId"
                       params={{ caseId: r.id }}
                       className={`grid grid-cols-[1fr_1.3fr_1.5fr_1fr_0.9fr_80px_28px] gap-3 px-5 py-4 border-b border-border last:border-b-0 items-center text-sm transition-colors hover:bg-muted/40 ${
-                        isBreached
+                        isResolved
+                          ? "bg-success/5 border-l-2 border-l-success opacity-75"
+                          : isBreached
                           ? "bg-destructive/5 border-l-2 border-l-destructive"
                           : isUrgent
                           ? "bg-warning/5 border-l-2 border-l-warning"

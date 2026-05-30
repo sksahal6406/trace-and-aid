@@ -18,6 +18,7 @@ import {
   PauseCircle,
   Timer,
   AlertOctagon,
+  CheckCircle2,
 } from "lucide-react";
 
 const navSections = [
@@ -53,6 +54,7 @@ const slaQueueNav = [
   { key: "approaching_sla",     label: "Approaching SLA",     icon: Timer,        urgency: "amber",  count: 1  },
   { key: "breached",            label: "SLA Breached",        icon: AlertOctagon, urgency: "red",    count: 3  },
   { key: "exceptions",          label: "Exceptions",          icon: AlertTriangle,urgency: "orange", count: 1  },
+  { key: "resolved",            label: "Resolved",            icon: CheckCircle2, urgency: "normal", count: 1  },
 ] as const;
 
 function useNow() {
@@ -115,12 +117,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
                             const qActive = pathname === "/service-requests" && currentQueue === q.key;
                             const QIcon = q.icon;
                             const dotCls =
+                              q.key    === "resolved" ? "bg-success" :
                               q.urgency === "pulse"   ? "bg-primary animate-pulse" :
                               q.urgency === "amber"   ? "bg-yellow-400" :
                               q.urgency === "red"     ? "bg-destructive" :
                               q.urgency === "orange"  ? "bg-orange-400" :
                                                         "bg-muted-foreground/40";
                             const badgeCls =
+                              q.key    === "resolved" ? "bg-success/15 text-success" :
                               q.urgency === "pulse"   ? "bg-primary text-primary-foreground" :
                               q.urgency === "red"     ? "bg-destructive text-white" :
                               q.urgency === "amber"   ? "bg-yellow-100 text-yellow-800" :
